@@ -7,10 +7,12 @@ import asyncio
 class FenrirBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.all()
-        super().__init__(command_prefix="?", intents=intents)
 
     async def setup_hook(self):
-        for filename in os.listdir("./cogs"):
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        COGS_DIR = os.path.join(BASE_DIR, "cogs")
+
+        for filename in os.listdir(COGS_DIR):
             if filename.endswith(".py"):
                 await self.load_extension(f"cogs.{filename[:-3]}")
         await self.tree.sync()
