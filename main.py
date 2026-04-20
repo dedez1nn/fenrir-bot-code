@@ -13,11 +13,15 @@ class FenrirBot(commands.Bot):
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
         COGS_DIR = os.path.join(BASE_DIR, "cogs")
 
-        for filename in os.listdir(COGS_DIR):
-            if filename.endswith(".py"):
-                await self.load_extension(f"cogs.{filename[:-3]}")
+        if os.path.exists(COGS_DIR):
+            for filename in os.listdir(COGS_DIR):
+                if filename.endswith(".py"):
+                    await self.load_extension(f"cogs.{filename[:-3]}")
+        else:
+            print("⚠️ Pasta cogs não encontrada")
+
         await self.tree.sync()
-        print("✅ Comandos sincronizados com sucesso!")
+        print("✅ Sync completo")
 
     async def on_ready(self):
         print(f"🤖 Bot conectado como {self.user} (ID: {self.user.id})")
