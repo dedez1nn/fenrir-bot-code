@@ -7,6 +7,7 @@ import asyncio
 class FenrirBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.all()
+        super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -21,7 +22,12 @@ class FenrirBot(commands.Bot):
     async def on_ready(self):
         print(f"🤖 Bot conectado como {self.user} (ID: {self.user.id})")
 
-        await bot.change_presence(activity=discord.Streaming(name='Relaxando na Alcateia do Fenrir 🐺', url='https://www.twitch.tv/discord'))
+        await self.change_presence(
+    activity=discord.Streaming(
+            name='Relaxando na Alcateia do Fenrir 🐺',
+            url='https://www.twitch.tv/discord'
+        )
+    )
         
         status_cog = self.get_cog("StatusCog")
         if status_cog:
