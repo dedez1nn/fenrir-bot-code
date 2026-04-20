@@ -50,4 +50,6 @@ TOKEN = os.getenv("TOKEN")
 async def main():
     await bot.start(TOKEN)  
 
+print("test 123")
+
 asyncio.run(main())
