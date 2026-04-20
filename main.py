@@ -13,13 +13,9 @@ class FenrirBot(commands.Bot):
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
         COGS_DIR = os.path.join(BASE_DIR, "fenrir", "cogs")
 
-        if not os.path.isdir(COGS_DIR):
-            raise FileNotFoundError(f"Pasta cogs não encontrada: {COGS_DIR}")
-
-        if os.path.exists(COGS_DIR):
-           for filename in os.listdir(COGS_DIR):
-                if filename.endswith(".py"):
-                    await self.load_extension(f"cogs.{filename[:-3]}")
+        for filename in os.listdir(COGS_DIR):
+            if filename.endswith(".py"):
+                await self.load_extension(f"fenrir.cogs.{filename[:-3]}")
         else:
             print("⚠️ Pasta cogs não encontrada")
 
