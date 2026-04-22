@@ -64,7 +64,7 @@ class InviteBlocker(commands.Cog):
                         )
                         embed.add_field(
                             name="Ação:",
-                            value="A mensagem não pôde ser removida (sem permissões)",
+                            value="A mensagem foi apagada automaticamente",
                             inline=False
                         )
                         embed.set_footer(text="Sistema de Moderação")

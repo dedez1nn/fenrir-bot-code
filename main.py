@@ -10,11 +10,15 @@ class FenrirBot(commands.Bot):
         super().__init__(command_prefix=None, intents=intents)
 
     async def setup_hook(self):
-        for filename in os.listdir("./cogs"):
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        COGS_DIR = os.path.join(BASE_DIR, "fenrir_security", "cogs")
+
+        for filename in os.listdir(COGS_DIR):
             if filename.endswith(".py"):
-                await self.load_extension(f"cogs.{filename[:-3]}")
+                await self.load_extension(f"fenrir_security.cogs.{filename[:-3]}")
+
         await self.tree.sync()
-        print("✅ Comandos sincronizados com sucesso!")
+        print("✅ Sync completo")
 
     async def on_ready(self):
         print(f"🤖 Bot conectado como {self.user} (ID: {self.user.id})")
