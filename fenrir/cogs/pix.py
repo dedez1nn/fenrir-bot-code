@@ -326,7 +326,7 @@ class PixCog(commands.Cog):
 
     async def atualizar_premium_usuario(self, user_id: int, plano: str):
         try:
-            with open("user_data.json", "r", encoding="utf-8") as f:
+            with open("data/user_data.json", "r", encoding="utf-8") as f:
                 user_data = json.load(f)
             
             user_id_str = str(user_id)
@@ -350,7 +350,7 @@ class PixCog(commands.Cog):
             user_data[user_id_str]["premium"] = plano
             user_data[user_id_str]["premium_expiracao"] = expiracao
             
-            with open("user_data.json", "w", encoding="utf-8") as f:
+            with open("data/user_data.json", "w", encoding="utf-8") as f:
                 json.dump(user_data, f, indent=4, ensure_ascii=False)
             
         except Exception as e:
@@ -369,7 +369,7 @@ class PixCog(commands.Cog):
 
     async def _executar_verificacao_premium(self):
         try:
-            with open("user_data.json", "r", encoding="utf-8") as f:
+            with open("data/user_data.json", "r", encoding="utf-8") as f:
                 user_data = json.load(f)
             
             agora = datetime.now().timestamp()
@@ -398,7 +398,7 @@ class PixCog(commands.Cog):
                             print(f"⚠️ Erro ao remover cargo do usuário {user_id_str}: {e}")
 
             if atualizado:
-                with open("user_data.json", "w", encoding="utf-8") as f:
+                with open("data/user_data.json", "w", encoding="utf-8") as f:
                     json.dump(user_data, f, indent=4, ensure_ascii=False)
 
                 
@@ -438,7 +438,7 @@ class PixCog(commands.Cog):
 
     async def adicionar_coins_manual(self, user_id, quantidade):
         try:
-            with open("user_data.json", "r", encoding="utf-8") as f:
+            with open("data/user_data.json", "r", encoding="utf-8") as f:
                 user_data = json.load(f)
             
             user_id_str = str(user_id)
@@ -452,7 +452,7 @@ class PixCog(commands.Cog):
             user_data[user_id_str]["coins"] += quantidade
             user_data[user_id_str]["total_ganho"] += quantidade
             
-            with open("user_data.json", "w", encoding="utf-8") as f:
+            with open("data/user_data.json", "w", encoding="utf-8") as f:
                 json.dump(user_data, f, indent=4, ensure_ascii=False)
             
             canal_log = self.bot.get_channel(1427483403510354035)
@@ -476,7 +476,7 @@ class PixCog(commands.Cog):
 
     async def adicionar_xp_manual(self, user_id, xp_ganho):
         try:
-            with open("user_data.json", "r", encoding="utf-8") as f:
+            with open("data/user_data.json", "r", encoding="utf-8") as f:
                 user_data = json.load(f)
             
             user_id_str = str(user_id)
@@ -489,7 +489,7 @@ class PixCog(commands.Cog):
             
             user_data[user_id_str]["xp"] += xp_ganho
             
-            with open("user_data.json", "w", encoding="utf-8") as f:
+            with open("data/user_data.json", "w", encoding="utf-8") as f:
                 json.dump(user_data, f, indent=4, ensure_ascii=False)
             
             canal_log = self.bot.get_channel(1427479688544129064)

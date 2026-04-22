@@ -130,7 +130,7 @@ class LojaView(discord.ui.View):
 class LojaCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.ARQUIVO_LOJA = "loja_data.json"
+        self.ARQUIVO_LOJA = "data/loja_data.json"
         self.loja_data = self.carregar_dados()
         self.canal_log_loja = 1427491600115699874
 

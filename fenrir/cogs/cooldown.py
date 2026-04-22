@@ -6,7 +6,7 @@ from discord.ext import commands
 class CooldownCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.ARQUIVO_COOLDOWNS = "cooldowns_data.json"
+        self.ARQUIVO_COOLDOWNS = "data/cooldowns_data.json"
         self.cooldowns = self.carregar_dados()
 
         self.cooldowns_itens = {

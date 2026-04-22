@@ -10,9 +10,9 @@ from datetime import datetime, timedelta
 class AventuraCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.ARQUIVO_AVENTURAS = "aventuras_data.json"
+        self.ARQUIVO_AVENTURAS = "data/aventuras_data.json"
         
-        self.COOLDOWN_HORAS = 4
+        self.COOLDOWN_HORAS = 0.001
         
         self.CHANCE_VITORIA_COMBATE = (30, 50)
         self.CHANCE_MACHUCADO_VITORIA = (40, 60)

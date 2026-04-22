@@ -9,7 +9,7 @@ import time
 class PremiumCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.ARQUIVO_DADOS = "user_data.json"
+        self.ARQUIVO_DADOS = "data/user_data.json"
         
         self.planos_info = {
             "aventureiro": {

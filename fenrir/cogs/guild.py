@@ -9,7 +9,7 @@ from typing import Optional
 class GuildSystem(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.ARQUIVO_GUILDS = "guilds_data.json"
+        self.ARQUIVO_GUILDS = "data/guilds_data.json"
         
         self.xp_base = 500000
         self.recompensas_nivel = {
@@ -157,7 +157,7 @@ class GuildSystem(commands.Cog):
 
     def obter_plano_usuario(self, user_id: int) -> str:
         try:
-            user_data_file = "user_data.json"
+            user_data_file = "data/user_data.json"
             if os.path.exists(user_data_file):
                 with open(user_data_file, "r", encoding="utf-8") as f:
                     user_data = json.load(f)
@@ -207,7 +207,7 @@ class GuildSystem(commands.Cog):
 
     def atualizar_guild_user_data(self, user_id: int, guild_id: str = None):
         try:
-            user_data_file = "user_data.json"
+            user_data_file = "data/user_data.json"
             dados = {}
             
             if os.path.exists(user_data_file):
@@ -228,7 +228,7 @@ class GuildSystem(commands.Cog):
 
     def obter_coins_usuario(self, user_id: int) -> int:
         try:
-            user_data_file = "user_data.json"
+            user_data_file = "data/user_data.json"
             if os.path.exists(user_data_file):
                 with open(user_data_file, "r", encoding="utf-8") as f:
                     user_data = json.load(f)
@@ -239,7 +239,7 @@ class GuildSystem(commands.Cog):
 
     def atualizar_coins_usuario(self, user_id: int, coins: int):
         try:
-            user_data_file = "user_data.json"
+            user_data_file = "data/user_data.json"
             dados = {}
             
             if os.path.exists(user_data_file):

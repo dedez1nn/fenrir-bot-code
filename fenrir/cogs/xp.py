@@ -308,7 +308,7 @@ class RankingView(discord.ui.View):
 class XPCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.ARQUIVO_DADOS = "user_data.json"
+        self.ARQUIVO_DADOS = "data/user_data.json"
         self.user_data = self.carregar_dados()
         self.xp_data = self.user_data
         self.cooldowns = {}

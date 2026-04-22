@@ -16,11 +16,9 @@ class FenrirBot(commands.Bot):
         for filename in os.listdir(COGS_DIR):
             if filename.endswith(".py"):
                 await self.load_extension(f"fenrir.cogs.{filename[:-3]}")
-        else:
-            print("⚠️ Pasta cogs não encontrada")
 
         await self.tree.sync()
-        print("✅ Sync completo")
+        print("Bot Carregado até aqui")
 
     async def on_ready(self):
         print(f"🤖 Bot conectado como {self.user} (ID: {self.user.id})")

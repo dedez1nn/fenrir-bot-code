@@ -10,7 +10,7 @@ from typing import Optional
 
 def carregar_user_data():
     try:
-        if os.path.exists("user_data.json"):
+        if os.path.exists("data/user_data.json"):
             with open("user_data.json", "r", encoding="utf-8") as f:
                 return json.load(f)
     except Exception as e:
@@ -20,7 +20,7 @@ def carregar_user_data():
 def salvar_user_data(dados):
     """Salva os dados no user_data.json"""
     try:
-        with open("user_data.json", "w", encoding="utf-8") as f:
+        with open("data/user_data.json", "w", encoding="utf-8") as f:
             json.dump(dados, f, indent=4, ensure_ascii=False)
         return True
     except Exception as e:
@@ -911,7 +911,7 @@ class ConfirmacaoDefensorAliancaView(discord.ui.View):
 class GuildAllianceRaidSystem(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.ARQUIVO_GUILDS = "guilds_data.json"
+        self.ARQUIVO_GUILDS = "data/guilds_data.json"
         self.CANAL_RAIDS_ID = 1430607187193102456
         self.verificar_raids.start()
 
