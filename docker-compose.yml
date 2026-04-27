@@ -1,0 +1,30 @@
+services:
+  bot:
+    build: .
+    container_name: fenrir
+    restart: unless-stopped
+    
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - ACCESS_TOKEN=${ACCESS_TOKEN}
+    
+    volumes:
+      - ./:/app
+      - ./data:/app/data
+      - ./logs:/app/logs
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    
+    networks:
+      - bot_network
+
+networks:
+  bot_network:
+    driver: bridge

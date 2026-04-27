@@ -342,6 +342,8 @@ class XPCog(commands.Cog):
 
     def carregar_dados(self):
         if os.path.exists(self.ARQUIVO_DADOS):
+
+            print("carregou os dados")
             with open(self.ARQUIVO_DADOS, "r", encoding="utf-8") as f:
                 dados = json.load(f)
                 for user_id, user_data in dados.items():
