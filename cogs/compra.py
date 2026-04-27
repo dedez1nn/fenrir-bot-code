@@ -193,7 +193,7 @@ class CompraCog(commands.Cog):
         try:
             cooldown_cog = self.get_cooldown_cog()
             if cooldown_cog:
-                cooldown_cog.registrar_compra(user_id, item_id)
+                await cooldown_cog.registrar_compra(user_id, item_id)
         except Exception as e:
             print(f"❌ Erro ao registrar cooldown: {e}")
             import traceback

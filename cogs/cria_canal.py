@@ -182,6 +182,19 @@ class VoiceCreator(commands.Cog):
     def cog_unload(self):
         self.cleanup_loop.cancel()
 
+    async def _cleanup_logic(self):
+        for guild in self.bot.guilds:
+            for channel in guild.voice_channels:
+                if channel.name.startswith("🔊 Sala de") and len(channel.members) == 0:
+                    try:
+                        await channel.delete()
+                    except (discord.Forbidden, discord.HTTPException):
+                        pass
+
+    @tasks.loop(minutes=2)
+    async def cleanup_loop(self):
+        await self._cleanup_logic()
+
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
         if after.channel and after.channel.id == self.main_channel_id:
