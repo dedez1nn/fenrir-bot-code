@@ -13,15 +13,12 @@ class FenrirBot(commands.Bot):
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
         COGS_DIR = os.path.join(BASE_DIR, "cogs")
 
-        cont = 1
         for filename in os.listdir(COGS_DIR):
-            if filename.endswith(".py"):
+            if filename.endswith(".py") and filename != "__init__.py":
                 await self.load_extension(f"cogs.{filename[:-3]}")
-                print(cont)
-                cont += 1
 
         await self.tree.sync()
-        print("Bot Carregado até aqui")
+        print("Bot setup loaded")
 
     async def on_ready(self):
         print(f"🤖 Bot conectado como {self.user} (ID: {self.user.id})")
