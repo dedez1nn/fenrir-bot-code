@@ -14,11 +14,18 @@ class FenrirBot(commands.Bot):
         COGS_DIR = os.path.join(BASE_DIR, "cogs")
 
         cont = 1
-        for filename in os.listdir(COGS_DIR):
-            if filename.endswith(".py"):
-                await self.load_extension(f"cogs.{filename[:-3]}")
+        for entry in os.listdir(COGS_DIR):
+            if entry.startswith("_"):
+                continue
+            if entry.endswith(".py"):
+                await self.load_extension(f"cogs.{entry[:-3]}")
                 print(cont)
                 cont += 1
+            elif os.path.isdir(os.path.join(COGS_DIR, entry)):
+                if os.path.exists(os.path.join(COGS_DIR, entry, "__init__.py")):
+                    await self.load_extension(f"cogs.{entry}")
+                    print(cont)
+                    cont += 1
 
         await self.tree.sync()
         print("✅ Sync completo")
