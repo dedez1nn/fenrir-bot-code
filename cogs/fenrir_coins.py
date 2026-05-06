@@ -350,7 +350,7 @@ class FenrirCoins(commands.Cog):
     @app_commands.command(name="coins", description="Ver suas coins ou de outro usuário")
     async def coins(self, interaction: discord.Interaction, membro: discord.Member = None):
 
-        if interaction.channel.id != 1426205118293868748:
+        if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message(f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", ephemeral=True)
             return
         
@@ -389,7 +389,7 @@ class FenrirCoins(commands.Cog):
     @app_commands.command(name="daily", description="Resgatar coins diárias")
     async def daily(self, interaction: discord.Interaction):
         
-        if interaction.channel.id != 1426205118293868748:
+        if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message(f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", ephemeral=True)
             return
         
@@ -460,7 +460,7 @@ class FenrirCoins(commands.Cog):
     )
     async def transferir(self, interaction: discord.Interaction, membro: discord.Member, quantidade: int):
         
-        if interaction.channel.id != 1426205118293868748:
+        if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message(f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", ephemeral=True)
             return
         
@@ -523,7 +523,7 @@ class FenrirCoins(commands.Cog):
     async def ranking_coins(self, interaction: discord.Interaction):
         await interaction.response.defer(thinking=True)
 
-        if interaction.channel.id != 1426205118293868748:
+        if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
             await interaction.followup.send(
                 f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !",
                 ephemeral=True

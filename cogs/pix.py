@@ -233,7 +233,7 @@ class PixCog(commands.Cog):
             embed.set_footer(text="Clique em 'Voltar' para cancelar e fechar este canal")
 
             view = PagamentoView(self, plano, usuario.id, self.cargos[plano], self.emoji_verify, self.emoji_voltar)
-            await canal.send(embed=embed, file=file, view=view)
+            view.message = await canal.send(embed=embed, file=file, view=view)
 
         except Exception as e:
             embed = discord.Embed(

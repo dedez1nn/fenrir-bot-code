@@ -584,7 +584,7 @@ class AventuraCog(commands.Cog):
     @app_commands.command(name="aventura", description="🌌 Inicie uma aventura ou resgate uma pendente")
     async def aventura(self, interaction: discord.Interaction):
         
-        if interaction.channel.id != 1426205118293868748:
+        if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message(f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", ephemeral=True)
             return
         
@@ -683,7 +683,7 @@ class AventuraCog(commands.Cog):
     @app_commands.command(name="aventura_status", description="🌌 Verifique o status da sua aventura atual")
     async def aventura_status(self, interaction: discord.Interaction):
         
-        if interaction.channel.id != 1426205118293868748:
+        if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message(f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", ephemeral=True)
             return
         

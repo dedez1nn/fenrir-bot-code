@@ -34,7 +34,7 @@ class ComandosLojaCog(commands.Cog):
     @app_commands.command(name="roubar", description="🎭 Rouba 40% das coins de um usuário (Requer compra)")
     async def roubar(self, interaction: discord.Interaction, vitima: discord.Member):
         
-        if interaction.channel.id != 1426205118293868748:
+        if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message(f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", ephemeral=True)
             return
         
@@ -167,7 +167,7 @@ class ComandosLojaCog(commands.Cog):
     )
     async def renomear_canal(self, interaction: discord.Interaction, canal: discord.TextChannel, novo_nome: str):
         
-        if interaction.channel.id != 1426205118293868748:
+        if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message(f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", ephemeral=True)
             return
         
@@ -268,7 +268,7 @@ class ComandosLojaCog(commands.Cog):
     )
     async def criar_enquete(self, interaction: discord.Interaction, pergunta: str, duracao_minutos: int = 60):
         
-        if interaction.channel.id != 1426205118293868748:
+        if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message(f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", ephemeral=True)
             return
         
@@ -343,7 +343,7 @@ class ComandosLojaCog(commands.Cog):
     @app_commands.describe(mensagem_id="ID da mensagem para fixar")
     async def fixar_mensagem(self, interaction: discord.Interaction, mensagem_id: str):
         
-        if interaction.channel.id != 1426205118293868748:
+        if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message(f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", ephemeral=True)
             return
         

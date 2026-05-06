@@ -293,7 +293,7 @@ class PremiumCog(commands.Cog):
     @app_commands.command(name="premium", description="Mostra informações sobre os planos premium")
     async def premium_info(self, interaction: discord.Interaction):
         
-        if interaction.channel.id != 1426205118293868748:
+        if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
             ephemero = True
         else:
             ephemero = False

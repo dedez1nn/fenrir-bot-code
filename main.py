@@ -81,7 +81,7 @@ bot = FenrirBot()
 @bot.tree.command(name="ping", description="Mostra a latência do bot")
 async def ping(interaction: discord.Interaction):
     
-    if interaction.channel.id != 1426205118293868748:
+    if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message(f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {bot.get_channel(1426205118293868748).mention} !", ephemeral=True)
         return
     

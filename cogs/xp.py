@@ -969,7 +969,7 @@ class XPCog(commands.Cog):
     @app_commands.command(name="xp", description="Mostra o seu XP.")
     async def xp(self, interaction: discord.Interaction, membro: discord.Member = None):
         try:
-            if interaction.channel.id != 1426205118293868748:
+            if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
                 await interaction.response.send_message(
                     f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", 
                     ephemeral=True
@@ -1042,7 +1042,7 @@ class XPCog(commands.Cog):
     @app_commands.command(name="status_dobro_xp", description="Mostra status do seu dobro de XP")
     async def status_dobro_xp(self, interaction: discord.Interaction):
         try:
-            if interaction.channel.id != 1426205118293868748:
+            if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
                 await interaction.response.send_message(
                     f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", 
                     ephemeral=True
@@ -1117,7 +1117,7 @@ class XPCog(commands.Cog):
     )
     async def set_titulo(self, interaction: discord.Interaction, membro: discord.Member, titulo: str):
         try:
-            if interaction.channel.id != 1426205118293868748:
+            if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
                 await interaction.response.send_message(
                     f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", 
                     ephemeral=True
@@ -1166,7 +1166,7 @@ class XPCog(commands.Cog):
     ])
     async def set_premium(self, interaction: discord.Interaction, membro: discord.Member, plano: str):
         try:
-            if interaction.channel.id != 1426205118293868748:
+            if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
                 await interaction.response.send_message(
                     f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", 
                     ephemeral=True
@@ -1214,7 +1214,7 @@ class XPCog(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def reset_xp_all(self, interaction: discord.Interaction):
         try:
-            if interaction.channel.id != 1426205118293868748:
+            if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
                 await interaction.response.send_message(
                     f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", 
                     ephemeral=True
@@ -1308,7 +1308,7 @@ class XPCog(commands.Cog):
     )
     async def retirar_xp(self, interaction: discord.Interaction, membro: discord.Member, quantidade: int):
         try:
-            if interaction.channel.id != 1426205118293868748:
+            if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
                 await interaction.response.send_message(
                     f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", 
                     ephemeral=True
@@ -1385,7 +1385,7 @@ class XPCog(commands.Cog):
     )
     async def config_voz(self, interaction: discord.Interaction, intervalo: int, xp_quantidade: int):
         try:
-            if interaction.channel.id != 1426205118293868748:
+            if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
                 await interaction.response.send_message(
                     f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", 
                     ephemeral=True
@@ -1417,7 +1417,7 @@ class XPCog(commands.Cog):
     @app_commands.command(name="status_voz", description="Mostra status do sistema de voz")
     async def status_voz(self, interaction: discord.Interaction):
         try:
-            if interaction.channel.id != 1426205118293868748:
+            if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
                 await interaction.response.send_message(
                     f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", 
                     ephemeral=True
@@ -1469,7 +1469,7 @@ class XPCog(commands.Cog):
     @app_commands.command(name="ranking", description="Mostra o ranking de Experiência com imagem")
     async def ranking(self, interaction: discord.Interaction):
         try:
-            if interaction.channel.id != 1426205118293868748:
+            if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
                 await interaction.response.send_message(
                     f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", 
                     ephemeral=True
