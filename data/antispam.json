@@ -1,3 +1,41 @@
 {
-
+  "guilds": {
+    "1426202696955986022": {
+      "users": {
+        "748681298020794479": {
+          "score": 7.0,
+          "last_event_ts": 1778103441.2946658,
+          "infractions": [
+            {
+              "ts": 1778103441.2946658,
+              "delta": 7,
+              "reason": "duplicate, suspicious_link",
+              "evidence": {
+                "channel_id": 1426205118293868748,
+                "message_id": 1501699423866982401,
+                "snippet": "compre aqui https://bit.ly/testecomprar"
+              }
+            }
+          ],
+          "punishments": [
+            {
+              "ts": 1778103442.8348732,
+              "action": "warn",
+              "reason": "duplicate, suspicious_link"
+            }
+          ],
+          "blacklisted": false,
+          "recent_messages": [
+            {
+              "ts": 1778103471.462055,
+              "norm": "testando bit.ly/teste",
+              "len": 21
+            }
+          ]
+        }
+      },
+      "whitelist": [],
+      "config_overrides": {}
+    }
+  }
 }

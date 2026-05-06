@@ -42,6 +42,8 @@ class AntiSpam(commands.Cog):
         return False
 
     async def _process(self, message: discord.Message, edited: bool = False) -> None:
+        if not self.config.enabled:
+            return
         if await self._is_exempt(message):
             return
 
@@ -330,3 +332,39 @@ class AntiSpam(commands.Cog):
         state["blacklisted"] = False
         await self.storage.save()
         await interaction.response.send_message(f"✅ {user.mention} removido da blacklist.", ephemeral=True)
+
+    @antispam_group.command(name="toggle", description="Liga ou desliga o sistema anti-spam")
+    @app_commands.describe(estado="on para ativar, off para desativar")
+    @app_commands.choices(estado=[
+        app_commands.Choice(name="on — ativar", value="on"),
+        app_commands.Choice(name="off — desativar", value="off"),
+    ])
+    async def cmd_toggle(self, interaction: discord.Interaction, estado: app_commands.Choice[str]) -> None:
+        self.config.enabled = estado.value == "on"
+        label = "✅ ativado" if self.config.enabled else "⛔ desativado"
+        await interaction.response.send_message(
+            f"🛡️ Anti-Spam {label}.", ephemeral=True
+        )
+
+    @app_commands.command(name="emergencia", description="EMERGÊNCIA: desativa Anti-Spam e Anti-Nuke imediatamente")
+    @app_commands.default_permissions(administrator=True)
+    async def cmd_emergencia(self, interaction: discord.Interaction) -> None:
+        self.config.enabled = False
+
+        antinuke = self.bot.get_cog("AntiNuke")
+        if antinuke:
+            antinuke.config.enabled = False
+
+        embed = discord.Embed(
+            title="🚨 EMERGÊNCIA — Sistemas desativados",
+            description=(
+                "**Anti-Spam** e **Anti-Nuke** foram desativados imediatamente.\n\n"
+                "Use `/antispam toggle on` e `/antinuke toggle on` para reativar cada um."
+            ),
+            color=discord.Color.dark_red(),
+            timestamp=discord.utils.utcnow(),
+        )
+        embed.add_field(name="Executado por", value=interaction.user.mention, inline=True)
+        embed.set_footer(text="Nenhuma moderação automática está ativa no momento.")
+        await interaction.response.send_message(embed=embed)
+        embed.s

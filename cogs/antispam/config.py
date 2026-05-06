@@ -21,6 +21,8 @@ class AntispamConfig:
     emoji_max: int = 10
     newline_max: int = 10
 
+    enabled: bool = True
+
     decay_per_minute: float = 1.0
 
     scores: Dict[str, int] = field(default_factory=lambda: {
@@ -38,6 +40,7 @@ class AntispamConfig:
         "external_invite": 2,
         "promo_spam": 4,
         "link_bait": 5,
+        "suspicious_email": 3,
     })
 
     ladder: Dict[int, str] = field(default_factory=lambda: {

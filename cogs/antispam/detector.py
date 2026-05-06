@@ -25,10 +25,32 @@ class Violation:
 
 
 class Detector:
+    # URLs com protocolo explícito: https://... ou http://...
+    _PROTO_RE = re.compile(r"https?://\S+", re.IGNORECASE)
+
+    # Domínio nu com caminho: bit.ly/abc  imgur.com/img123  discord.gg/invite
+    # Exige pelo menos um "/" após o TLD para reduzir falsos positivos (evita "e.g." e "i.e.")
+    _BARE_RE = re.compile(
+        r"\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]*[a-zA-Z0-9])?\.)"
+        r"+[a-zA-Z]{2,}/\S*",
+        re.IGNORECASE,
+    )
+
+    # E-mails: usuario@dominio.tld (sem precisar de prefixo http)
+    _EMAIL_RE = re.compile(
+        r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}\b",
+        re.IGNORECASE,
+    )
+
     def __init__(self, config: AntispamConfig):
         self.config = config
         self._link_re = re.compile(config.suspicious_link_pattern, re.IGNORECASE)
-        self._url_re = re.compile(r"https?://\S+", re.IGNORECASE)
+
+    def _extract_links(self, text: str) -> list[str]:
+        return self._PROTO_RE.findall(text) + self._BARE_RE.findall(text)
+
+    def _extract_emails(self, text: str) -> list[str]:
+        return self._EMAIL_RE.findall(text)
 
     def analyze(
         self,
@@ -79,7 +101,9 @@ class Detector:
         elif mentions >= cfg.mention_soft:
             violations.append(Violation("mention_soft", scores["mention_soft"], f"{mentions} mentions"))
 
-        urls = self._url_re.findall(clean)
+        urls = self._extract_links(clean)
+        emails = self._extract_emails(clean)
+
         if urls:
             for url in urls:
                 if self._link_re.search(url):
@@ -96,6 +120,21 @@ class Detector:
                     f"{len(urls)} urls",
                 ))
 
+        if emails:
+            first = emails[0]
+            domain = first.split("@", 1)[1] if "@" in first else first
+            violations.append(Violation(
+                "suspicious_email",
+                scores["suspicious_email"],
+                first[:80],
+            ))
+            if self._link_re.search(domain):
+                violations.append(Violation(
+                    "suspicious_link",
+                    scores["suspicious_link"],
+                    f"email domain: {domain[:60]}",
+                ))
+
         low = norm
         for kw in cfg.phishing_keywords:
             if kw in low:
@@ -107,7 +146,7 @@ class Detector:
                 violations.append(Violation("promo_spam", scores["promo_spam"], kw))
                 break
 
-        has_url = bool(urls)
+        has_url = bool(urls or emails)
         for phrase in cfg.link_bait_phrases:
             if phrase in low and has_url:
                 violations.append(Violation("link_bait", scores["link_bait"], f'"{phrase}" + url'))
