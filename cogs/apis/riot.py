@@ -12,7 +12,24 @@ RIOT_REGION = os.getenv("RIOT_REGION", "br1")
 RIOT_REGIONAL = "americas"
 
 CANAL_COMANDOS = 1426205118293868748
-CANAL_LOG = 1427479688544129064
+
+E = ""  # ESC para ANSI nos code blocks do Discord
+
+_QUEUE_NAMES: dict[int, str] = {
+    420: "Solo/Duo",
+    440: "Flex",
+    400: "Normal (Rascunho)",
+    430: "Normal (Cego)",
+    450: "ARAM",
+    900: "URF",
+    76:  "URF",
+    325: "ARURF",
+    1020: "Um por Todos",
+    1900: "URF",
+    830: "Co-op vs IA",
+    840: "Co-op vs IA",
+    850: "Co-op vs IA",
+}
 
 
 class RiotCog(commands.Cog):
@@ -23,7 +40,10 @@ class RiotCog(commands.Cog):
         self.base_url = f"https://{self.region}.api.riotgames.com"
         self.regional_url = f"https://{RIOT_REGIONAL}.api.riotgames.com"
         self.ddragon_version = None
-        self.champion_data = {}
+        self.champion_data: dict[int, str] = {}
+        self.champion_key_data: dict[int, str] = {}
+
+    # ─── HTTP ────────────────────────────────────────────────────────────────
 
     async def _get(self, url: str, params: dict = None) -> dict | None:
         headers = {"X-Riot-Token": self.api_key}
@@ -38,12 +58,13 @@ class RiotCog(commands.Cog):
         except aiohttp.ServerTimeoutError:
             print(f"❌ Riot API timeout: {url}")
             return None
-        except Exception as e:
-            print(f"❌ Riot API error: {e}")
+        except Exception as ex:
+            print(f"❌ Riot API error: {ex}")
             return None
 
+    # ─── Resolução de Riot ID ────────────────────────────────────────────────
+
     async def _parse_riot_id(self, nick: str) -> tuple[str, str] | None:
-        """Extrai (gameName, tagLine) de 'Nome#TAG'. Retorna None se o formato for inválido."""
         if "#" not in nick:
             return None
         game_name, tag_line = nick.split("#", 1)
@@ -51,14 +72,14 @@ class RiotCog(commands.Cog):
 
     async def _get_puuid(self, game_name: str, tag_line: str) -> str | None:
         data = await self._get(
-            f"{self.regional_url}/riot/account/v1/accounts/by-riot-id/{quote(game_name)}/{quote(tag_line)}"
+            f"{self.regional_url}/riot/account/v1/accounts/by-riot-id"
+            f"/{quote(game_name)}/{quote(tag_line)}"
         )
         return data["puuid"] if data else None
 
     async def _get_summoner(self, nick: str) -> dict | None:
-        """Resolve Riot ID (Nome#TAG) → PUUID → summoner data."""
         parsed = await self._parse_riot_id(nick)
-        if parsed is None:
+        if not parsed:
             return None
         game_name, tag_line = parsed
         puuid = await self._get_puuid(game_name, tag_line)
@@ -71,9 +92,8 @@ class RiotCog(commands.Cog):
         return data
 
     async def _get_tft_summoner(self, nick: str) -> dict | None:
-        """Resolve Riot ID (Nome#TAG) → PUUID → TFT summoner data."""
         parsed = await self._parse_riot_id(nick)
-        if parsed is None:
+        if not parsed:
             return None
         game_name, tag_line = parsed
         puuid = await self._get_puuid(game_name, tag_line)
@@ -91,34 +111,45 @@ class RiotCog(commands.Cog):
         timeout = aiohttp.ClientTimeout(total=10)
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get("https://ddragon.leagueoflegends.com/api/versions.json") as resp:
+                async with session.get(
+                    "https://ddragon.leagueoflegends.com/api/versions.json"
+                ) as resp:
                     versions = await resp.json()
                     self.ddragon_version = versions[0]
                 async with session.get(
-                    f"https://ddragon.leagueoflegends.com/cdn/{self.ddragon_version}/data/pt_BR/champion.json"
+                    f"https://ddragon.leagueoflegends.com/cdn"
+                    f"/{self.ddragon_version}/data/pt_BR/champion.json"
                 ) as resp:
                     data = await resp.json()
                     for champ in data["data"].values():
-                        self.champion_data[int(champ["key"])] = champ["name"]
+                        cid = int(champ["key"])
+                        self.champion_data[cid] = champ["name"]
+                        self.champion_key_data[cid] = champ["id"]
         except aiohttp.ServerTimeoutError:
             print("❌ Timeout ao carregar dados de campeões")
-        except Exception as e:
-            print(f"❌ Erro ao carregar dados de campeões: {e}")
+        except Exception as ex:
+            print(f"❌ Erro ao carregar dados de campeões: {ex}")
         return self.champion_data
 
     # ─── Helpers visuais ─────────────────────────────────────────────────────
 
+    _TIER_PT = {
+        "IRON": "Ferro", "BRONZE": "Bronze", "SILVER": "Prata",
+        "GOLD": "Ouro", "PLATINUM": "Platina", "EMERALD": "Esmeralda",
+        "DIAMOND": "Diamante", "MASTER": "Mestre",
+        "GRANDMASTER": "Grão-Mestre", "CHALLENGER": "Desafiante",
+    }
     _TIER_COLORS = {
-        "IRON":         discord.Color.from_rgb(75,  80,  95),
-        "BRONZE":       discord.Color.from_rgb(140, 90,  60),
-        "SILVER":       discord.Color.from_rgb(158, 158, 158),
-        "GOLD":         discord.Color.from_rgb(255, 200, 0),
-        "PLATINUM":     discord.Color.from_rgb(48,  197, 176),
-        "EMERALD":      discord.Color.from_rgb(0,   200, 64),
-        "DIAMOND":      discord.Color.from_rgb(74,  144, 217),
-        "MASTER":       discord.Color.from_rgb(155, 89,  182),
-        "GRANDMASTER":  discord.Color.from_rgb(231, 76,  60),
-        "CHALLENGER":   discord.Color.from_rgb(241, 196, 15),
+        "IRON":        discord.Color.from_rgb(75,  80,  95),
+        "BRONZE":      discord.Color.from_rgb(140, 90,  60),
+        "SILVER":      discord.Color.from_rgb(158, 158, 158),
+        "GOLD":        discord.Color.from_rgb(205, 160, 0),
+        "PLATINUM":    discord.Color.from_rgb(48,  197, 176),
+        "EMERALD":     discord.Color.from_rgb(0,   200, 64),
+        "DIAMOND":     discord.Color.from_rgb(74,  144, 217),
+        "MASTER":      discord.Color.from_rgb(155, 89,  182),
+        "GRANDMASTER": discord.Color.from_rgb(231, 76,  60),
+        "CHALLENGER":  discord.Color.from_rgb(241, 196, 15),
     }
     _TIER_EMOJIS = {
         "IRON": "⚫", "BRONZE": "🟤", "SILVER": "⚪", "GOLD": "🟡",
@@ -127,49 +158,58 @@ class RiotCog(commands.Cog):
     }
 
     def _cor_por_tier(self, tier: str | None) -> discord.Color:
-        return self._TIER_COLORS.get(tier or "", discord.Color.blue())
+        return self._TIER_COLORS.get(tier or "", discord.Color.from_rgb(88, 101, 242))
 
-    def _barra_wr(self, wins: int, losses: int, tamanho: int = 14) -> str:
-        """Retorna uma barra ANSI colorida com o winrate."""
+    @staticmethod
+    def _fmt_pts(n: int) -> str:
+        return f"{n:,}".replace(",", ".")
+
+    def _barra_wr(self, wins: int, losses: int, tamanho: int = 16) -> str:
         total = wins + losses
+        rst = f"{E}[0m"
+        vazio_cor = f"{E}[90m"   # cinza visível no tema escuro
+
         if total == 0:
-            vazio = "[2;37m" + "░" * tamanho + "[0m"
-            return f"{vazio}  [2;37mN/A[0m"
+            return f"{vazio_cor}{'░' * tamanho}{rst}  {vazio_cor}N/A{rst}"
 
         wr = wins / total
         wr_pct = round(wr * 100)
         preenchido = round(wr * tamanho)
         vazio_n = tamanho - preenchido
 
-        if wr >= 0.55:
-            cor = "[1;32m"   # verde bold
+        if wr >= 0.56:
+            cor = f"{E}[1;92m"   # verde claro bold
         elif wr >= 0.50:
-            cor = "[32m"     # verde
+            cor = f"{E}[92m"     # verde claro
         elif wr >= 0.45:
-            cor = "[33m"     # amarelo
+            cor = f"{E}[1;93m"   # amarelo claro bold
         else:
-            cor = "[1;31m"   # vermelho bold
+            cor = f"{E}[1;91m"   # vermelho claro bold
 
-        barra = (
-            f"{cor}{'█' * preenchido}[0m"
-            f"[2;37m{'░' * vazio_n}[0m"
-            f"  {cor}{wr_pct}% WR[0m"
+        return (
+            f"{cor}{'█' * preenchido}{rst}"
+            f"{vazio_cor}{'░' * vazio_n}{rst}"
+            f"  {cor}{wr_pct}% WR{rst}"
         )
-        return barra
 
     def _campo_rank(self, entry: dict | None, label: str) -> tuple[str, str]:
-        """Retorna (nome_campo, valor_campo) para um embed field de rank."""
         if not entry:
-            emoji = "🎮"
-            return f"{emoji} {label}", "*Unranked*"
-
+            emoji = "➖"
+            return (
+                f"{emoji} {label}",
+                f"```ansi\n{E}[90m{'░' * 16}{E}[0m  {E}[90mSem classificação{E}[0m\n```",
+            )
         emoji = self._TIER_EMOJIS.get(entry["tier"], "🎮")
+        tier_pt = self._TIER_PT.get(entry["tier"], entry["tier"])
+        divisao = entry.get("rank", "")
+        rank_str = f"{tier_pt} {divisao}".strip()
         wins, losses = entry["wins"], entry["losses"]
         barra = self._barra_wr(wins, losses)
         valor = (
             f"```ansi\n"
             f"{barra}\n"
-            f"[0m{entry['tier']} {entry['rank']} · {entry['leaguePoints']} LP · {wins}W {losses}L"
+            f"{E}[0m{rank_str} · {entry['leaguePoints']} LP\n"
+            f"{E}[90m{wins}V  {losses}D{E}[0m"
             f"\n```"
         )
         return f"{emoji} {label}", valor
@@ -180,8 +220,9 @@ class RiotCog(commands.Cog):
         return interaction.channel.id != CANAL_COMANDOS
 
     async def _resposta_canal_errado(self, interaction: discord.Interaction):
+        canal = self.bot.get_channel(CANAL_COMANDOS)
         await interaction.response.send_message(
-            f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(CANAL_COMANDOS).mention}!",
+            f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {canal.mention}!",
             ephemeral=True,
         )
 
@@ -200,7 +241,6 @@ class RiotCog(commands.Cog):
             self._get_champion_data(),
             self._get_summoner(nick),
         )
-
         if not summoner:
             await interaction.followup.send(
                 "❌ Invocador não encontrado. Use o formato **Nome#TAG** (ex: `dededao#BR1`).",
@@ -208,62 +248,71 @@ class RiotCog(commands.Cog):
             )
             return
 
-        sid = summoner.get("id", "")
+        puuid = summoner["puuid"]
         ranked, maestrias, total_score = await asyncio.gather(
-            self._get(f"{self.base_url}/lol/league/v4/entries/by-summoner/{sid}"),
+            self._get(f"{self.base_url}/lol/league/v4/entries/by-puuid/{puuid}"),
             self._get(
-                f"{self.base_url}/lol/champion-mastery/v4/champion-masteries/by-summoner/{sid}/top",
+                f"{self.base_url}/lol/champion-mastery/v4/champion-masteries/by-puuid/{puuid}/top",
                 params={"count": 3},
             ),
-            self._get(f"{self.base_url}/lol/champion-mastery/v4/scores/by-summoner/{sid}"),
+            self._get(f"{self.base_url}/lol/champion-mastery/v4/scores/by-puuid/{puuid}"),
         )
 
         solo = next((e for e in (ranked or []) if e["queueType"] == "RANKED_SOLO_5x5"), None)
         flex = next((e for e in (ranked or []) if e["queueType"] == "RANKED_FLEX_SR"), None)
 
         version = self.ddragon_version or "14.24.1"
-        icon_id = summoner.get("profileIconId", 0)
-        icon_url = f"https://ddragon.leagueoflegends.com/cdn/{version}/img/profileicon/{icon_id}.png"
+        icon_url = (
+            f"https://ddragon.leagueoflegends.com/cdn/{version}"
+            f"/img/profileicon/{summoner.get('profileIconId', 0)}.png"
+        )
 
         revision = summoner.get("revisionDate")
-        ultima_atividade = (
-            f"\n⏱️ Última atividade: **{datetime.fromtimestamp(revision / 1000).strftime('%d/%m/%Y')}**"
+        atividade = (
+            f"\n⏱️ Visto por último em **{datetime.fromtimestamp(revision / 1000).strftime('%d/%m/%Y')}**"
             if revision else ""
         )
 
+        tier_display = ""
+        if solo:
+            tier_pt = self._TIER_PT.get(solo["tier"], solo["tier"])
+            divisao = solo.get("rank", "")
+            tier_display = f" — {tier_pt} {divisao}".strip()
+
         embed = discord.Embed(
-            title=f"🎮 {summoner.get('name', nick)}",
+            title=f"🎮  {summoner.get('name', nick)}{tier_display}",
             description=(
-                f"🌍 Servidor: **{self.region.upper()}** · "
+                f"🌍 **{self.region.upper()}**  ·  "
                 f"🏅 Nível **{summoner.get('summonerLevel', '?')}**"
-                f"{ultima_atividade}"
+                f"{atividade}"
             ),
             color=self._cor_por_tier(solo["tier"] if solo else None),
         )
         embed.set_thumbnail(url=icon_url)
 
-        nome_solo, val_solo = self._campo_rank(solo, "Solo/Duo")
-        nome_flex, val_flex = self._campo_rank(flex, "Flex")
-        embed.add_field(name=nome_solo, value=val_solo, inline=True)
-        embed.add_field(name=nome_flex, value=val_flex, inline=True)
+        n_solo, v_solo = self._campo_rank(solo, "Solo / Duo")
+        n_flex, v_flex = self._campo_rank(flex, "Flex 5×5")
+        embed.add_field(name=n_solo, value=v_solo, inline=True)
+        embed.add_field(name=n_flex, value=v_flex, inline=True)
 
         if maestrias:
             medalhas = ["🥇", "🥈", "🥉"]
-            def _fmt_pts(n: int) -> str:
-                return f"{n:,}".replace(",", ".")
-
             linhas = [
-                f"{medalhas[i]} **{champion_data.get(m['championId'], str(m['championId']))}**"
-                f" — Nv.{m['championLevel']} · {_fmt_pts(m['championPoints'])} pts"
+                f"{medalhas[i]}  **{champion_data.get(m['championId'], str(m['championId']))}**"
+                f"  —  Nv. {m['championLevel']}  ·  {self._fmt_pts(m['championPoints'])} pts"
                 for i, m in enumerate(maestrias)
             ]
             score_linha = (
-                f"\n🎯 Score total: **{_fmt_pts(total_score)}**"
+                f"\n\n🎯  Score total: **{self._fmt_pts(total_score)}**"
                 if isinstance(total_score, int) else ""
             )
-            embed.add_field(name="⚔️ Top Maestrias", value="\n".join(linhas) + score_linha, inline=False)
+            embed.add_field(
+                name="⚔️  Top Maestrias",
+                value="\n".join(linhas) + score_linha,
+                inline=False,
+            )
 
-        embed.set_footer(text="Riot Games API • League of Legends")
+        embed.set_footer(text="Riot Games API  ·  League of Legends")
         await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="lol-rank", description="Exibe o rank de um invocador no LoL")
@@ -277,34 +326,34 @@ class RiotCog(commands.Cog):
 
         summoner = await self._get_summoner(nick)
         if not summoner:
-            await interaction.followup.send("❌ Invocador não encontrado. Use o formato **Nome#TAG** (ex: `dededao#BR1`).", ephemeral=True)
+            await interaction.followup.send(
+                "❌ Invocador não encontrado. Use o formato **Nome#TAG** (ex: `dededao#BR1`).",
+                ephemeral=True,
+            )
             return
 
-        ranked = await self._get(f"{self.base_url}/lol/league/v4/entries/by-summoner/{summoner['id']}")
+        ranked = await self._get(f"{self.base_url}/lol/league/v4/entries/by-puuid/{summoner['puuid']}")
+        solo = next((e for e in (ranked or []) if e["queueType"] == "RANKED_SOLO_5x5"), None)
+        flex = next((e for e in (ranked or []) if e["queueType"] == "RANKED_FLEX_SR"), None)
 
-        embed = discord.Embed(title=f"🏆 Rank de {summoner['name']}", color=discord.Color.gold())
+        version = self.ddragon_version or "14.24.1"
+        icon_url = (
+            f"https://ddragon.leagueoflegends.com/cdn/{version}"
+            f"/img/profileicon/{summoner.get('profileIconId', 0)}.png"
+        )
 
-        filas = {"RANKED_SOLO_5x5": "Solo/Duo", "RANKED_FLEX_SR": "Flex"}
+        embed = discord.Embed(
+            title=f"🏆  Rank  —  {summoner.get('name', nick)}",
+            color=self._cor_por_tier(solo["tier"] if solo else None),
+        )
+        embed.set_thumbnail(url=icon_url)
 
-        if ranked:
-            for entrada in ranked:
-                fila = filas.get(entrada["queueType"], entrada["queueType"])
-                wins = entrada["wins"]
-                losses = entrada["losses"]
-                winrate = round(wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
-                embed.add_field(
-                    name=f"🎯 {fila}",
-                    value=(
-                        f"**{entrada['tier']} {entrada['rank']}** — {entrada['leaguePoints']} LP\n"
-                        f"✅ {wins}V / ❌ {losses}D — {winrate}% WR"
-                    ),
-                    inline=False,
-                )
+        n_solo, v_solo = self._campo_rank(solo, "Solo / Duo")
+        n_flex, v_flex = self._campo_rank(flex, "Flex 5×5")
+        embed.add_field(name=n_solo, value=v_solo, inline=True)
+        embed.add_field(name=n_flex, value=v_flex, inline=True)
 
-        if not embed.fields:
-            embed.description = "Sem dados de ranked (Unranked)"
-
-        embed.set_footer(text="Riot Games API • League of Legends")
+        embed.set_footer(text="Riot Games API  ·  League of Legends")
         await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="lol-historico", description="Exibe o histórico de partidas de um invocador")
@@ -317,12 +366,16 @@ class RiotCog(commands.Cog):
         quantidade = max(1, min(quantidade, 10))
         await interaction.response.defer()
 
-        summoner = await self._get_summoner(nick)
+        champion_data, summoner = await asyncio.gather(
+            self._get_champion_data(),
+            self._get_summoner(nick),
+        )
         if not summoner:
-            await interaction.followup.send("❌ Invocador não encontrado. Use o formato **Nome#TAG** (ex: `dededao#BR1`).", ephemeral=True)
+            await interaction.followup.send(
+                "❌ Invocador não encontrado. Use o formato **Nome#TAG** (ex: `dededao#BR1`).",
+                ephemeral=True,
+            )
             return
-
-        champion_data = await self._get_champion_data()
 
         match_ids = await self._get(
             f"{self.regional_url}/lol/match/v5/matches/by-puuid/{summoner['puuid']}/ids",
@@ -332,16 +385,18 @@ class RiotCog(commands.Cog):
             await interaction.followup.send("❌ Histórico não encontrado.", ephemeral=True)
             return
 
-        embed = discord.Embed(
-            title=f"📜 Histórico de {summoner['name']} (últimas {quantidade})",
-            color=discord.Color.blue(),
+        matches = await asyncio.gather(
+            *[self._get(f"{self.regional_url}/lol/match/v5/matches/{mid}") for mid in match_ids]
         )
 
-        for match_id in match_ids:
-            match = await self._get(f"{self.regional_url}/lol/match/v5/matches/{match_id}")
+        embed = discord.Embed(
+            title=f"📜  Histórico  —  {summoner.get('name', nick)}",
+            color=discord.Color.from_rgb(88, 101, 242),
+        )
+
+        for match in matches:
             if not match:
                 continue
-
             participant = next(
                 (p for p in match["info"]["participants"] if p["puuid"] == summoner["puuid"]),
                 None,
@@ -350,18 +405,34 @@ class RiotCog(commands.Cog):
                 continue
 
             champ_name = champion_data.get(participant["championId"], str(participant["championId"]))
-            resultado = "✅ Vitória" if participant["win"] else "❌ Derrota"
-            kills, deaths, assists = participant["kills"], participant["deaths"], participant["assists"]
-            duracao = match["info"]["gameDuration"] // 60
-            modo = match["info"]["gameMode"]
+            wins = participant["win"]
+            resultado_emoji = "✅" if wins else "❌"
+            resultado_str = "Vitória" if wins else "Derrota"
+
+            k, d, a = participant["kills"], participant["deaths"], participant["assists"]
+            kda_ratio = round((k + a) / max(1, d), 2)
+            cs = participant.get("totalMinionsKilled", 0) + participant.get("neutralMinionsKilled", 0)
+            nivel = participant.get("champLevel", "?")
+            duracao_s = match["info"]["gameDuration"]
+            mins, secs = duracao_s // 60, duracao_s % 60
+
+            queue_id = match["info"].get("queueId", 0)
+            modo = _QUEUE_NAMES.get(queue_id, match["info"].get("gameMode", "?"))
 
             embed.add_field(
-                name=f"{resultado} — {champ_name} ({modo})",
-                value=f"KDA: **{kills}/{deaths}/{assists}** • {duracao} min",
+                name=f"{resultado_emoji}  {resultado_str}  ·  {champ_name}  ·  {modo}  ·  {mins}m{secs:02d}s",
+                value=(
+                    f"⚔️  `{k}/{d}/{a}`  ({kda_ratio:.2f} KDA)"
+                    f"  ·  🌾 **{cs}** CS"
+                    f"  ·  Nv. **{nivel}**"
+                ),
                 inline=False,
             )
 
-        embed.set_footer(text="Riot Games API • League of Legends")
+        if not embed.fields:
+            embed.description = "Nenhuma partida encontrada."
+
+        embed.set_footer(text="Riot Games API  ·  League of Legends")
         await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="lol-maestria", description="Exibe as top 5 maestrias de campeões de um invocador")
@@ -373,37 +444,60 @@ class RiotCog(commands.Cog):
 
         await interaction.response.defer()
 
-        summoner = await self._get_summoner(nick)
+        champion_data, summoner = await asyncio.gather(
+            self._get_champion_data(),
+            self._get_summoner(nick),
+        )
         if not summoner:
-            await interaction.followup.send("❌ Invocador não encontrado. Use o formato **Nome#TAG** (ex: `dededao#BR1`).", ephemeral=True)
+            await interaction.followup.send(
+                "❌ Invocador não encontrado. Use o formato **Nome#TAG** (ex: `dededao#BR1`).",
+                ephemeral=True,
+            )
             return
 
-        champion_data = await self._get_champion_data()
-
-        maestrias = await self._get(
-            f"{self.base_url}/lol/champion-mastery/v4/champion-masteries/by-summoner/{summoner['id']}/top",
-            params={"count": 5},
+        maestrias, total_score = await asyncio.gather(
+            self._get(
+                f"{self.base_url}/lol/champion-mastery/v4/champion-masteries/by-puuid/{summoner['puuid']}/top",
+                params={"count": 5},
+            ),
+            self._get(f"{self.base_url}/lol/champion-mastery/v4/scores/by-puuid/{summoner['puuid']}"),
         )
         if not maestrias:
             await interaction.followup.send("❌ Dados de maestria não encontrados.", ephemeral=True)
             return
 
         medalhas = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
-
-        embed = discord.Embed(
-            title=f"⚔️ Top Maestrias de {summoner['name']}",
-            color=discord.Color.purple(),
+        version = self.ddragon_version or "14.24.1"
+        top_champ_key = self.champion_key_data.get(maestrias[0]["championId"], "")
+        thumb_url = (
+            f"https://ddragon.leagueoflegends.com/cdn/{version}/img/champion/{top_champ_key}.png"
+            if top_champ_key else discord.Embed.Empty
         )
+
+        score_str = (
+            f"\n\n🎯  Score total: **{self._fmt_pts(total_score)}**"
+            if isinstance(total_score, int) else ""
+        )
+
+        linhas = []
         for i, m in enumerate(maestrias):
             champ_name = champion_data.get(m["championId"], str(m["championId"]))
-            pontos = f"{m['championPoints']:,}".replace(",", ".")
-            embed.add_field(
-                name=f"{medalhas[i]} {champ_name}",
-                value=f"Nível **{m['championLevel']}** — {pontos} pontos",
-                inline=False,
+            pontos = self._fmt_pts(m["championPoints"])
+            estrelas = "⭐" * min(m["championLevel"], 7)
+            linhas.append(
+                f"{medalhas[i]}  **{champ_name}**  {estrelas}\n"
+                f"　　Nv. {m['championLevel']}  ·  {pontos} pts"
             )
 
-        embed.set_footer(text="Riot Games API • League of Legends")
+        embed = discord.Embed(
+            title=f"⚔️  Top Maestrias  —  {summoner.get('name', nick)}",
+            description="\n\n".join(linhas) + score_str,
+            color=discord.Color.from_rgb(155, 89, 182),
+        )
+        if top_champ_key:
+            embed.set_thumbnail(url=thumb_url)
+
+        embed.set_footer(text="Riot Games API  ·  League of Legends")
         await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="lol-rotacao", description="Campeões gratuitos desta semana no LoL")
@@ -414,21 +508,29 @@ class RiotCog(commands.Cog):
 
         await interaction.response.defer()
 
-        champion_data = await self._get_champion_data()
-        rotacao = await self._get(f"{self.base_url}/lol/platform/v3/champion-rotations")
-
+        champion_data, rotacao = await asyncio.gather(
+            self._get_champion_data(),
+            self._get(f"{self.base_url}/lol/platform/v3/champion-rotations"),
+        )
         if not rotacao:
             await interaction.followup.send("❌ Não foi possível obter a rotação.", ephemeral=True)
             return
 
         nomes = [champion_data.get(cid, str(cid)) for cid in rotacao.get("freeChampionIds", [])]
-        nomes_novatos = [champion_data.get(cid, str(cid)) for cid in rotacao.get("freeChampionIdsForNewPlayers", [])]
+        novatos = [champion_data.get(cid, str(cid)) for cid in rotacao.get("freeChampionIdsForNewPlayers", [])]
 
-        embed = discord.Embed(title="🎮 Rotação Semanal Gratuita", color=discord.Color.green())
-        embed.add_field(name="🆓 Campeões Gratuitos", value=", ".join(nomes) or "N/A", inline=False)
-        if nomes_novatos:
-            embed.add_field(name="🌱 Para Novatos", value=", ".join(nomes_novatos), inline=False)
-        embed.set_footer(text="Riot Games API • League of Legends")
+        def colunas(lista: list[str], n: int = 3) -> str:
+            linhas = [lista[i:i+n] for i in range(0, len(lista), n)]
+            return "\n".join("  ·  ".join(col) for col in linhas) or "N/A"
+
+        embed = discord.Embed(
+            title="🎮  Rotação Semanal Gratuita",
+            color=discord.Color.from_rgb(0, 200, 64),
+        )
+        embed.add_field(name="🆓  Campeões Gratuitos", value=colunas(nomes), inline=False)
+        if novatos:
+            embed.add_field(name="🌱  Para Novatos", value=colunas(novatos), inline=False)
+        embed.set_footer(text="Riot Games API  ·  League of Legends")
         await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="lol-aovivo", description="Exibe a partida atual de um invocador")
@@ -440,37 +542,50 @@ class RiotCog(commands.Cog):
 
         await interaction.response.defer()
 
-        summoner = await self._get_summoner(nick)
+        champion_data, summoner = await asyncio.gather(
+            self._get_champion_data(),
+            self._get_summoner(nick),
+        )
         if not summoner:
-            await interaction.followup.send("❌ Invocador não encontrado. Use o formato **Nome#TAG** (ex: `dededao#BR1`).", ephemeral=True)
+            await interaction.followup.send(
+                "❌ Invocador não encontrado. Use o formato **Nome#TAG** (ex: `dededao#BR1`).",
+                ephemeral=True,
+            )
             return
 
-        champion_data = await self._get_champion_data()
-        live = await self._get(f"{self.base_url}/lol/spectator/v4/active-games/by-summoner/{summoner['id']}")
-
+        live = await self._get(
+            f"{self.base_url}/lol/spectator/v5/active-games/by-summoner/{summoner['puuid']}"
+        )
         if not live:
-            await interaction.followup.send(f"❌ **{nick}** não está em partida no momento.", ephemeral=True)
+            await interaction.followup.send(
+                f"❌ **{nick}** não está em partida no momento.", ephemeral=True
+            )
             return
 
-        duracao = live["gameLength"] // 60
-        modo = live["gameMode"]
+        mins = live["gameLength"] // 60
+        secs = live["gameLength"] % 60
+        queue_id = live.get("gameQueueConfigId", 0)
+        modo = _QUEUE_NAMES.get(queue_id, live.get("gameMode", "?"))
+
+        def formatar_time(participantes: list) -> str:
+            linhas = []
+            for p in participantes:
+                name = p.get("riotId") or p.get("summonerName", "?")
+                champ = champion_data.get(p["championId"], str(p["championId"]))
+                linhas.append(f"**{champ}**  —  {name}")
+            return "\n".join(linhas)
+
         azul = [p for p in live["participants"] if p["teamId"] == 100]
         vermelho = [p for p in live["participants"] if p["teamId"] == 200]
 
-        def formatar_time(participantes):
-            return "\n".join(
-                f"• {p['summonerName']} — {champion_data.get(p['championId'], str(p['championId']))}"
-                for p in participantes
-            )
-
         embed = discord.Embed(
-            title=f"🔴 AO VIVO — {nick}",
-            description=f"**Modo:** {modo} • **Tempo:** {duracao} min",
-            color=discord.Color.red(),
+            title=f"🔴  AO VIVO  —  {nick}",
+            description=f"**{modo}**  ·  `{mins}:{secs:02d}` em andamento",
+            color=discord.Color.from_rgb(231, 76, 60),
         )
-        embed.add_field(name="🔵 Time Azul", value=formatar_time(azul), inline=True)
-        embed.add_field(name="🔴 Time Vermelho", value=formatar_time(vermelho), inline=True)
-        embed.set_footer(text="Riot Games API • League of Legends")
+        embed.add_field(name="🔵  Time Azul", value=formatar_time(azul), inline=True)
+        embed.add_field(name="🔴  Time Vermelho", value=formatar_time(vermelho), inline=True)
+        embed.set_footer(text="Riot Games API  ·  League of Legends")
         await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="lol-comparar", description="Compara o rank de dois invocadores")
@@ -482,30 +597,38 @@ class RiotCog(commands.Cog):
 
         await interaction.response.defer()
 
-        s1 = await self._get_summoner(nick1)
-        s2 = await self._get_summoner(nick2)
-
+        s1, s2 = await asyncio.gather(
+            self._get_summoner(nick1),
+            self._get_summoner(nick2),
+        )
         if not s1 or not s2:
-            await interaction.followup.send("❌ Um ou ambos os invocadores não foram encontrados.", ephemeral=True)
+            await interaction.followup.send(
+                "❌ Um ou ambos os invocadores não foram encontrados.", ephemeral=True
+            )
             return
 
-        r1 = await self._get(f"{self.base_url}/lol/league/v4/entries/by-summoner/{s1['id']}")
-        r2 = await self._get(f"{self.base_url}/lol/league/v4/entries/by-summoner/{s2['id']}")
+        r1, r2 = await asyncio.gather(
+            self._get(f"{self.base_url}/lol/league/v4/entries/by-puuid/{s1['puuid']}"),
+            self._get(f"{self.base_url}/lol/league/v4/entries/by-puuid/{s2['puuid']}"),
+        )
 
-        def resumo(ranked, nome):
-            if not ranked:
-                return f"**{nome}**\nUnranked"
-            solo = next((e for e in ranked if e["queueType"] == "RANKED_SOLO_5x5"), None)
-            if not solo:
-                return f"**{nome}**\nUnranked"
-            wins, losses = solo["wins"], solo["losses"]
-            wr = round(wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
-            return f"**{nome}**\n{solo['tier']} {solo['rank']} — {solo['leaguePoints']} LP\n✅ {wins}V ❌ {losses}D — {wr}% WR"
+        def solo_entry(ranked):
+            return next((e for e in (ranked or []) if e["queueType"] == "RANKED_SOLO_5x5"), None)
 
-        embed = discord.Embed(title="⚔️ Comparação de Rank", color=discord.Color.orange())
-        embed.add_field(name="🔵 Jogador 1", value=resumo(r1, s1["name"]), inline=True)
-        embed.add_field(name="🔴 Jogador 2", value=resumo(r2, s2["name"]), inline=True)
-        embed.set_footer(text="Riot Games API • League of Legends")
+        e1, e2 = solo_entry(r1), solo_entry(r2)
+        color = self._cor_por_tier(e1["tier"] if e1 else (e2["tier"] if e2 else None))
+
+        n1, v1 = self._campo_rank(e1, s1.get("name", nick1))
+        n2, v2 = self._campo_rank(e2, s2.get("name", nick2))
+
+        embed = discord.Embed(
+            title=f"⚔️  Comparação Solo/Duo",
+            description=f"**{s1.get('name', nick1)}**  vs  **{s2.get('name', nick2)}**",
+            color=color,
+        )
+        embed.add_field(name=n1, value=v1, inline=True)
+        embed.add_field(name=n2, value=v2, inline=True)
+        embed.set_footer(text="Riot Games API  ·  League of Legends")
         await interaction.followup.send(embed=embed)
 
     # ─── Teamfight Tactics ────────────────────────────────────────────────────
@@ -522,30 +645,23 @@ class RiotCog(commands.Cog):
         summoner = await self._get_tft_summoner(nick)
         if not summoner:
             await interaction.followup.send(
-                "❌ Invocador não encontrado. Use o formato **Nome#TAG** (ex: `dededao#BR1`).", ephemeral=True
+                "❌ Invocador não encontrado. Use o formato **Nome#TAG** (ex: `dededao#BR1`).",
+                ephemeral=True,
             )
             return
 
-        ranked = await self._get(f"{self.base_url}/tft/league/v1/entries/by-summoner/{summoner['id']}")
+        ranked = await self._get(f"{self.base_url}/tft/league/v1/entries/by-puuid/{summoner['puuid']}")
+        entry = (ranked or [None])[0] if ranked else None
 
-        embed = discord.Embed(title=f"🎲 TFT Rank de {summoner['name']}", color=discord.Color.teal())
+        nome, valor = self._campo_rank(entry, "Ranked TFT")
+        color = self._cor_por_tier(entry["tier"] if entry else None)
 
-        if ranked:
-            for entrada in ranked:
-                wins, losses = entrada["wins"], entrada["losses"]
-                wr = round(wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
-                embed.add_field(
-                    name="🏆 Ranked TFT",
-                    value=(
-                        f"**{entrada['tier']} {entrada['rank']}** — {entrada['leaguePoints']} LP\n"
-                        f"✅ {wins}V / ❌ {losses}D — {wr}% WR"
-                    ),
-                    inline=False,
-                )
-        else:
-            embed.description = "Sem dados de ranked (Unranked)"
-
-        embed.set_footer(text="Riot Games API • Teamfight Tactics")
+        embed = discord.Embed(
+            title=f"🎲  TFT Rank  —  {summoner.get('name', nick)}",
+            color=color,
+        )
+        embed.add_field(name=nome, value=valor, inline=False)
+        embed.set_footer(text="Riot Games API  ·  Teamfight Tactics")
         await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="tft-historico", description="Exibe o histórico de partidas de TFT")
@@ -561,7 +677,8 @@ class RiotCog(commands.Cog):
         summoner = await self._get_tft_summoner(nick)
         if not summoner:
             await interaction.followup.send(
-                "❌ Invocador não encontrado. Use o formato **Nome#TAG** (ex: `dededao#BR1`).", ephemeral=True
+                "❌ Invocador não encontrado. Use o formato **Nome#TAG** (ex: `dededao#BR1`).",
+                ephemeral=True,
             )
             return
 
@@ -573,18 +690,20 @@ class RiotCog(commands.Cog):
             await interaction.followup.send("❌ Histórico não encontrado.", ephemeral=True)
             return
 
-        emojis = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣"]
-
-        embed = discord.Embed(
-            title=f"📜 TFT Histórico de {summoner['name']} (últimas {quantidade})",
-            color=discord.Color.teal(),
+        matches = await asyncio.gather(
+            *[self._get(f"{self.regional_url}/tft/match/v1/matches/{mid}") for mid in match_ids]
         )
 
-        for match_id in match_ids:
-            match = await self._get(f"{self.regional_url}/tft/match/v1/matches/{match_id}")
+        lugar_emojis = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣"]
+
+        embed = discord.Embed(
+            title=f"🎲  TFT Histórico  —  {summoner.get('name', nick)}",
+            color=discord.Color.from_rgb(48, 197, 176),
+        )
+
+        for match in matches:
             if not match:
                 continue
-
             participant = next(
                 (p for p in match["info"]["participants"] if p["puuid"] == summoner["puuid"]),
                 None,
@@ -592,23 +711,27 @@ class RiotCog(commands.Cog):
             if not participant:
                 continue
 
-            colocacao = participant["placement"]
+            col = participant["placement"]
             nivel = participant.get("level", "?")
+            emoji = lugar_emojis[col - 1] if 1 <= col <= 8 else "💀"
+
             traits_ativos = [
                 t["name"].split("_")[-1]
                 for t in participant.get("traits", [])
                 if t.get("tier_current", 0) > 0
-            ][:3]
-            traits_str = ", ".join(traits_ativos) if traits_ativos else "N/A"
-            emoji = emojis[colocacao - 1] if 1 <= colocacao <= 8 else "💀"
+            ][:4]
+            traits_str = "  ·  ".join(traits_ativos) if traits_ativos else "—"
 
             embed.add_field(
-                name=f"{emoji} {colocacao}º lugar — Nível {nivel}",
-                value=f"Traits ativos: {traits_str}",
+                name=f"{emoji}  {col}º lugar  ·  Nível {nivel}",
+                value=f"🧬  {traits_str}",
                 inline=False,
             )
 
-        embed.set_footer(text="Riot Games API • Teamfight Tactics")
+        if not embed.fields:
+            embed.description = "Nenhuma partida encontrada."
+
+        embed.set_footer(text="Riot Games API  ·  Teamfight Tactics")
         await interaction.followup.send(embed=embed)
 
 
