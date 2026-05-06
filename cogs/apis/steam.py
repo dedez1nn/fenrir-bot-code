@@ -27,13 +27,17 @@ class SteamCog(commands.Cog):
         self.api_key = STEAM_API_KEY
 
     async def _get(self, url: str, params: dict = None) -> dict | None:
+        timeout = aiohttp.ClientTimeout(total=10)
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url, params=params) as resp:
                     if resp.status == 200:
                         return await resp.json()
                     print(f"❌ Steam API {resp.status}: {url}")
                     return None
+        except aiohttp.ServerTimeoutError:
+            print(f"❌ Steam API timeout: {url}")
+            return None
         except Exception as e:
             print(f"❌ Steam API error: {e}")
             return None

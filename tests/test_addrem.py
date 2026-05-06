@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import AsyncMock, Mock
 import discord
 
-from cogs.addrem import AddRole
+from cogs.moderacao.addrem import AddRole
 
 
 @pytest.fixture

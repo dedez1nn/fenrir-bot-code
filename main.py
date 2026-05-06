@@ -1,8 +1,10 @@
 import discord
 from dotenv import load_dotenv
 from discord.ext import commands
+from discord import app_commands
 import os
 import asyncio
+import traceback
 
 class FenrirBot(commands.Bot):
     def __init__(self):
@@ -13,9 +15,13 @@ class FenrirBot(commands.Bot):
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
         COGS_DIR = os.path.join(BASE_DIR, "cogs")
 
-        for filename in os.listdir(COGS_DIR):
-            if filename.endswith(".py") and filename != "__init__.py":
-                await self.load_extension(f"cogs.{filename[:-3]}")
+        for root, dirs, files in os.walk(COGS_DIR):
+            dirs[:] = [d for d in dirs if d != "__pycache__"]
+            for filename in files:
+                if filename.endswith(".py") and filename != "__init__.py":
+                    rel = os.path.relpath(os.path.join(root, filename), BASE_DIR)
+                    module = rel.replace(os.sep, ".")[:-3]
+                    await self.load_extension(module)
 
         await self.tree.sync()
         print("Bot setup loaded")
@@ -93,6 +99,19 @@ async def ping(interaction: discord.Interaction):
     )
     await interaction.response.send_message(embed=embed)
     
+
+
+@bot.tree.error
+async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    traceback.print_exception(type(error), error, error.__traceback__)
+    msg = "❌ Ocorreu um erro inesperado. Tente novamente mais tarde."
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(msg, ephemeral=True)
+        else:
+            await interaction.response.send_message(msg, ephemeral=True)
+    except Exception:
+        pass
 
 
 load_dotenv()

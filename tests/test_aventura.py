@@ -8,7 +8,7 @@ import os
 import asyncio
 
 # Importe correto do arquivo da cog
-from cogs.aventurar import AventuraCog
+from cogs.progressao.aventurar import AventuraCog
 
 @pytest.fixture
 def bot():
@@ -39,6 +39,8 @@ def interaction():
     interaction.user = Mock()
     interaction.user.id = 123456789
     interaction.user.mention = "@usuário"
+    interaction.user.guild_permissions = Mock()
+    interaction.user.guild_permissions.administrator = False
     interaction.channel = Mock()
     interaction.channel.id = 1426205118293868748  # Canal correto
     interaction.response = AsyncMock()
@@ -108,8 +110,9 @@ class TestAventuraCog:
         dados = aventura_cog.carregar_dados()
         assert "123456" in dados
     
-    def test_carregar_dados_arquivo_nao_existe(self, aventura_cog):
+    def test_carregar_dados_arquivo_nao_existe(self, aventura_cog, tmp_path):
         """Teste carregar dados quando arquivo não existe"""
+        aventura_cog.ARQUIVO_AVENTURAS = str(tmp_path / "inexistente.json")
         dados = aventura_cog.carregar_dados()
         assert dados == {}
     
@@ -351,8 +354,8 @@ class TestAventuraCog:
 async def test_setup():
     """Teste função setup"""
     bot = AsyncMock()
-    with patch('cogs.aventurar.AventuraCog') as mock_cog:
-        from cogs.aventurar import setup as setup_func
+    with patch('cogs.progressao.aventurar.AventuraCog') as mock_cog:
+        from cogs.progressao.aventurar import setup as setup_func
         await setup_func(bot)
         mock_cog.assert_called_once_with(bot)
         bot.add_cog.assert_called_once()

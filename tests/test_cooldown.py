@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import discord
 from discord.ext import commands
 
-from cogs.cooldown import CooldownCog
+from cogs.economia.cooldown import CooldownCog
 
 @pytest.fixture
 def bot():
@@ -277,8 +277,8 @@ class TestCooldownCog:
 @pytest.mark.asyncio
 async def test_setup():
     bot = AsyncMock()
-    with patch('cogs.cooldown.CooldownCog') as mock_cog:
-        from cogs.cooldown import setup as setup_func
+    with patch('cogs.economia.cooldown.CooldownCog') as mock_cog:
+        from cogs.economia.cooldown import setup as setup_func
         await setup_func(bot)
         mock_cog.assert_called_once_with(bot)
         bot.add_cog.assert_called_once()

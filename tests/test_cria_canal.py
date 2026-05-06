@@ -3,7 +3,7 @@ from unittest.mock import Mock, AsyncMock, patch, PropertyMock
 import discord
 from discord.ext import commands
 
-from cogs.cria_canal import (
+from cogs.moderacao.cria_canal import (
     VoiceCreator,
     VoiceControlView,
     RenameModal,
@@ -417,8 +417,8 @@ class TestKickSelectView:
 @pytest.mark.asyncio
 async def test_setup():
     bot = AsyncMock()
-    with patch("cogs.cria_canal.VoiceCreator") as mock_cog:
-        from cogs.cria_canal import setup as setup_func
+    with patch("cogs.moderacao.cria_canal.VoiceCreator") as mock_cog:
+        from cogs.moderacao.cria_canal import setup as setup_func
 
         await setup_func(bot)
         mock_cog.assert_called_once_with(bot)

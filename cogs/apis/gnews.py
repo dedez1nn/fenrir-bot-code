@@ -30,8 +30,9 @@ class GNewsCog(commands.Cog):
         params["token"] = self.api_key
         params.setdefault("lang", "pt")
         params.setdefault("max", 5)
+        timeout = aiohttp.ClientTimeout(total=10)
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(f"{GNEWS_BASE}/{endpoint}", params=params) as resp:
                     if resp.status == 200:
                         return await resp.json()
@@ -40,6 +41,9 @@ class GNewsCog(commands.Cog):
                     else:
                         print(f"❌ GNews API {resp.status}")
                     return None
+        except aiohttp.ServerTimeoutError:
+            print("❌ GNews timeout")
+            return None
         except Exception as e:
             print(f"❌ GNews error: {e}")
             return None

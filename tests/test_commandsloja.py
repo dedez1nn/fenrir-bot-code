@@ -5,7 +5,7 @@ import discord
 from discord.ext import commands
 import asyncio
 
-from cogs.comands_loja import ComandosLojaCog
+from cogs.economia.comands_loja import ComandosLojaCog
 
 @pytest.fixture
 def bot():
@@ -29,6 +29,8 @@ def interaction():
     interaction.user.mention = "@usuario"
     interaction.user.display_name = "Usuario"
     interaction.user.display_avatar.url = "https://avatar.url"
+    interaction.user.guild_permissions = Mock()
+    interaction.user.guild_permissions.administrator = False
     interaction.channel = Mock()
     interaction.channel.id = 1426205118293868748
     interaction.channel.send = AsyncMock()
@@ -410,8 +412,8 @@ class TestComandosLojaCog:
 @pytest.mark.asyncio
 async def test_setup():
     bot = AsyncMock()
-    with patch('cogs.comands_loja.ComandosLojaCog') as mock_cog:
-        from cogs.comands_loja import setup as setup_func
+    with patch('cogs.economia.comands_loja.ComandosLojaCog') as mock_cog:
+        from cogs.economia.comands_loja import setup as setup_func
         await setup_func(bot)
         mock_cog.assert_called_once_with(bot)
         bot.add_cog.assert_called_once()

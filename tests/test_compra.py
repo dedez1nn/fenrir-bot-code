@@ -5,7 +5,7 @@ import discord
 from discord.ext import commands
 import asyncio
 
-from cogs.compra import CompraCog, SelecionarTituloView, SelecionarCorView, TituloModal, CorPremiumModal
+from cogs.economia.compra import CompraCog, SelecionarTituloView, SelecionarCorView, TituloModal, CorPremiumModal
 
 @pytest.fixture
 def bot():
@@ -408,8 +408,8 @@ class TestCompraCog:
 @pytest.mark.asyncio
 async def test_setup():
     bot = AsyncMock()
-    with patch('cogs.compra.CompraCog') as mock_cog:
-        from cogs.compra import setup as setup_func
+    with patch('cogs.economia.compra.CompraCog') as mock_cog:
+        from cogs.economia.compra import setup as setup_func
         await setup_func(bot)
         mock_cog.assert_called_once_with(bot)
         bot.add_cog.assert_called_once()
