@@ -1,12 +1,3 @@
 {
-    "123456789": {
-        "inicio": "2026-05-06T17:13:38.819248",
-        "canal_id": 999999,
-        "situacao": {
-            "nome": "Piratas no Porto",
-            "descricao": "⚓ Ao chegar no porto, um grupo de piratas famintos te cerca exigindo seu tesouro!",
-            "imagem": "https://cdn.discordapp.com/attachments/1288876556898275328/1428865474091028511/Piratas_e_o_Lobo_Fantasma.png?ex=68f40e2c&is=68f2bcac&hm=f92f414c791383bdec7c754f7e39d8124b594d8034b1e96ca3917d598a56fa39&",
-            "tipo": "combate"
-        }
-    }
+
 }
