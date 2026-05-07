@@ -6,3 +6,5 @@ aiohttp
 python-dotenv
 mercadopago
 pytest
+pytest-asyncio
+asyncpg==0.29.0

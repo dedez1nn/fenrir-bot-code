@@ -47,7 +47,7 @@ class TituloModal(discord.ui.Modal, title="🏷️ Escolha seu Título Personali
             ephemeral=True
         )
         
-        canal_log = self.compra_cog.bot.get_channel(1427479688544129064)
+        canal_log = self.compra_cog.bot.get_channel(self.compra_cog.bot.config.get("xp_log_channel_id") if self.compra_cog.bot.config else None)
         if canal_log:
             user = self.compra_cog.bot.get_user(self.user_id)
             embed_log = discord.Embed(
@@ -114,7 +114,7 @@ class CorPremiumModal(discord.ui.Modal, title="🎨 Escolha sua Cor Premium"):
                         ephemeral=True
                     )
                     
-                    canal_log = self.compra_cog.bot.get_channel(1427479688544129064)
+                    canal_log = self.compra_cog.bot.get_channel(self.compra_cog.bot.config.get("xp_log_channel_id") if self.compra_cog.bot.config else None)
                     if canal_log:
                         embed_log = discord.Embed(
                             title="🎨 Cor Premium Selecionada",
@@ -219,11 +219,13 @@ class CompraCog(commands.Cog):
             return False
 
     async def enviar_mensagem_ticket(self, interaction: discord.Interaction, item_nome: str):
+        _cfg = getattr(interaction.client, "config", None)
+        _ch_id = _cfg.get("tickets_channel_id") if _cfg else 0
         mensagem = (
             f"✅ **Compra Confirmada**\n\n"
-            f"Para conseguir o **{item_nome}**, abra um ticket em: <#1426275563378839606>\n\n"
+            f"Para conseguir o **{item_nome}**, abra um ticket em: <#{_ch_id}>\n\n"
             f"📋 **Instruções:**\n"
-            f"1. Vá para <#1426275563378839606>\n"
+            f"1. Vá para <#{_ch_id}>\n"
             f"2. Clique em 'Abrir Ticket'\n"
             f"3. Informe que comprou: **{item_nome}**\n"
             f"4. Aguarde a equipe te atender!\n"

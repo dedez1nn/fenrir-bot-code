@@ -11,7 +11,6 @@ RIOT_API_KEY = os.getenv("RIOT_API_KEY")
 RIOT_REGION = os.getenv("RIOT_REGION", "br1")
 RIOT_REGIONAL = "americas"
 
-CANAL_COMANDOS = 1426205118293868748
 
 E = ""  # ESC para ANSI nos code blocks do Discord
 
@@ -214,25 +213,16 @@ class RiotCog(commands.Cog):
         )
         return f"{emoji} {label}", valor
 
-    def _canal_invalido(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.guild_permissions.administrator:
-            return False
-        return interaction.channel.id != CANAL_COMANDOS
-
-    async def _resposta_canal_errado(self, interaction: discord.Interaction):
-        canal = self.bot.get_channel(CANAL_COMANDOS)
-        await interaction.response.send_message(
-            f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {canal.mention}!",
-            ephemeral=True,
-        )
+    async def _canal_invalido(self, interaction: discord.Interaction) -> bool:
+        return await self.bot.guard_channel(interaction)
 
     # ─── League of Legends ───────────────────────────────────────────────────
 
     @app_commands.command(name="lol-perfil", description="Exibe o perfil completo de um invocador no LoL")
     @app_commands.describe(nick="Riot ID do invocador (ex: dededao#BR1)")
     async def lol_perfil(self, interaction: discord.Interaction, nick: str):
-        if self._canal_invalido(interaction):
-            await self._resposta_canal_errado(interaction)
+        if await self._canal_invalido(interaction):
+            return
             return
 
         await interaction.response.defer()
@@ -318,8 +308,8 @@ class RiotCog(commands.Cog):
     @app_commands.command(name="lol-rank", description="Exibe o rank de um invocador no LoL")
     @app_commands.describe(nick="Riot ID do invocador (ex: dededao#BR1)")
     async def lol_rank(self, interaction: discord.Interaction, nick: str):
-        if self._canal_invalido(interaction):
-            await self._resposta_canal_errado(interaction)
+        if await self._canal_invalido(interaction):
+            return
             return
 
         await interaction.response.defer()
@@ -359,8 +349,8 @@ class RiotCog(commands.Cog):
     @app_commands.command(name="lol-historico", description="Exibe o histórico de partidas de um invocador")
     @app_commands.describe(nick="Riot ID do invocador (ex: dededao#BR1)", quantidade="Número de partidas (1-10)")
     async def lol_historico(self, interaction: discord.Interaction, nick: str, quantidade: int = 5):
-        if self._canal_invalido(interaction):
-            await self._resposta_canal_errado(interaction)
+        if await self._canal_invalido(interaction):
+            return
             return
 
         quantidade = max(1, min(quantidade, 10))
@@ -438,8 +428,8 @@ class RiotCog(commands.Cog):
     @app_commands.command(name="lol-maestria", description="Exibe as top 5 maestrias de campeões de um invocador")
     @app_commands.describe(nick="Riot ID do invocador (ex: dededao#BR1)")
     async def lol_maestria(self, interaction: discord.Interaction, nick: str):
-        if self._canal_invalido(interaction):
-            await self._resposta_canal_errado(interaction)
+        if await self._canal_invalido(interaction):
+            return
             return
 
         await interaction.response.defer()
@@ -502,8 +492,8 @@ class RiotCog(commands.Cog):
 
     @app_commands.command(name="lol-rotacao", description="Campeões gratuitos desta semana no LoL")
     async def lol_rotacao(self, interaction: discord.Interaction):
-        if self._canal_invalido(interaction):
-            await self._resposta_canal_errado(interaction)
+        if await self._canal_invalido(interaction):
+            return
             return
 
         await interaction.response.defer()
@@ -536,8 +526,8 @@ class RiotCog(commands.Cog):
     @app_commands.command(name="lol-aovivo", description="Exibe a partida atual de um invocador")
     @app_commands.describe(nick="Riot ID do invocador (ex: dededao#BR1)")
     async def lol_aovivo(self, interaction: discord.Interaction, nick: str):
-        if self._canal_invalido(interaction):
-            await self._resposta_canal_errado(interaction)
+        if await self._canal_invalido(interaction):
+            return
             return
 
         await interaction.response.defer()
@@ -591,8 +581,8 @@ class RiotCog(commands.Cog):
     @app_commands.command(name="lol-comparar", description="Compara o rank de dois invocadores")
     @app_commands.describe(nick1="Riot ID do 1º (ex: Faker#KR1)", nick2="Riot ID do 2º (ex: dededao#BR1)")
     async def lol_comparar(self, interaction: discord.Interaction, nick1: str, nick2: str):
-        if self._canal_invalido(interaction):
-            await self._resposta_canal_errado(interaction)
+        if await self._canal_invalido(interaction):
+            return
             return
 
         await interaction.response.defer()
@@ -636,8 +626,8 @@ class RiotCog(commands.Cog):
     @app_commands.command(name="tft-rank", description="Exibe o rank de um invocador no TFT")
     @app_commands.describe(nick="Riot ID do invocador (ex: dededao#BR1)")
     async def tft_rank(self, interaction: discord.Interaction, nick: str):
-        if self._canal_invalido(interaction):
-            await self._resposta_canal_errado(interaction)
+        if await self._canal_invalido(interaction):
+            return
             return
 
         await interaction.response.defer()
@@ -667,8 +657,8 @@ class RiotCog(commands.Cog):
     @app_commands.command(name="tft-historico", description="Exibe o histórico de partidas de TFT")
     @app_commands.describe(nick="Riot ID do invocador (ex: dededao#BR1)", quantidade="Número de partidas (1-10)")
     async def tft_historico(self, interaction: discord.Interaction, nick: str, quantidade: int = 5):
-        if self._canal_invalido(interaction):
-            await self._resposta_canal_errado(interaction)
+        if await self._canal_invalido(interaction):
+            return
             return
 
         quantidade = max(1, min(quantidade, 10))

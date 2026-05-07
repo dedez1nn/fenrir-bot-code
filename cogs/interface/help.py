@@ -2,8 +2,6 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-CANAL_COMANDOS = 1426205118293868748
-
 PAGES = [
     {
         "title": "Riot API — League of Legends & TFT",
@@ -223,12 +221,7 @@ class HelpCog(commands.Cog):
 
     @app_commands.command(name="help", description="Lista todos os comandos do bot por categoria")
     async def help(self, interaction: discord.Interaction):
-        if interaction.channel.id != CANAL_COMANDOS and not interaction.user.guild_permissions.administrator:
-            canal = self.bot.get_channel(CANAL_COMANDOS)
-            await interaction.response.send_message(
-                f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {canal.mention}!",
-                ephemeral=True,
-            )
+        if await self.bot.guard_channel(interaction):
             return
 
         view = HelpView(page=0)

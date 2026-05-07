@@ -34,8 +34,7 @@ class ComandosLojaCog(commands.Cog):
     @app_commands.command(name="roubar", description="🎭 Rouba 40% das coins de um usuário (Requer compra)")
     async def roubar(self, interaction: discord.Interaction, vitima: discord.Member):
         
-        if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message(f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", ephemeral=True)
+        if await self.bot.guard_channel(interaction):
             return
         
         try:
@@ -115,7 +114,7 @@ class ComandosLojaCog(commands.Cog):
                     timestamp=discord.utils.utcnow()
                 )
                 
-                canal_log = self.bot.get_channel(1427479688544129064)
+                canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
                 if canal_log:
                     embed_log = discord.Embed(
                         title="🎭 Roubo de Coins Executado",
@@ -167,8 +166,7 @@ class ComandosLojaCog(commands.Cog):
     )
     async def renomear_canal(self, interaction: discord.Interaction, canal: discord.TextChannel, novo_nome: str):
         
-        if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message(f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", ephemeral=True)
+        if await self.bot.guard_channel(interaction):
             return
         
         try:
@@ -224,7 +222,7 @@ class ComandosLojaCog(commands.Cog):
 
             await interaction.response.send_message(embed=embed)
 
-            canal_log = self.bot.get_channel(1427479688544129064)
+            canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
             if canal_log:
                 embed_log = discord.Embed(
                     title="📛 Canal Renomeado Temporariamente",
@@ -268,8 +266,7 @@ class ComandosLojaCog(commands.Cog):
     )
     async def criar_enquete(self, interaction: discord.Interaction, pergunta: str, duracao_minutos: int = 60):
         
-        if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message(f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", ephemeral=True)
+        if await self.bot.guard_channel(interaction):
             return
         
         try:
@@ -317,7 +314,7 @@ class ComandosLojaCog(commands.Cog):
                 ephemeral=True
             )
 
-            canal_log = self.bot.get_channel(1427479688544129064)
+            canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
             if canal_log:
                 embed_log = discord.Embed(
                     title="📊 Enquete Criada",
@@ -343,8 +340,7 @@ class ComandosLojaCog(commands.Cog):
     @app_commands.describe(mensagem_id="ID da mensagem para fixar")
     async def fixar_mensagem(self, interaction: discord.Interaction, mensagem_id: str):
         
-        if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message(f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", ephemeral=True)
+        if await self.bot.guard_channel(interaction):
             return
         
         try:

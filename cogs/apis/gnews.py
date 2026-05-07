@@ -5,7 +5,6 @@ import aiohttp
 import os
 
 GNEWS_API_KEY = os.getenv("GNEWS_API_KEY")
-CANAL_COMANDOS = 1426205118293868748
 GNEWS_BASE = "https://gnews.io/api/v4"
 
 CATEGORIAS = [
@@ -48,16 +47,8 @@ class GNewsCog(commands.Cog):
             print(f"❌ GNews error: {e}")
             return None
 
-    def _canal_invalido(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.guild_permissions.administrator:
-            return False
-        return interaction.channel.id != CANAL_COMANDOS
-
-    async def _resposta_canal_errado(self, interaction: discord.Interaction):
-        await interaction.response.send_message(
-            f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(CANAL_COMANDOS).mention}!",
-            ephemeral=True,
-        )
+    async def _canal_invalido(self, interaction: discord.Interaction) -> bool:
+        return await self.bot.guard_channel(interaction)
 
     def _build_embed(self, artigos: list, titulo: str) -> discord.Embed:
         embed = discord.Embed(title=f"📰 {titulo}", color=discord.Color.blue())
@@ -82,8 +73,8 @@ class GNewsCog(commands.Cog):
         interaction: discord.Interaction,
         categoria: app_commands.Choice[str] = None,
     ):
-        if self._canal_invalido(interaction):
-            await self._resposta_canal_errado(interaction)
+        if await self._canal_invalido(interaction):
+            return
             return
 
         await interaction.response.defer()
@@ -113,8 +104,8 @@ class GNewsCog(commands.Cog):
         query: str,
         em_portugues: bool = True,
     ):
-        if self._canal_invalido(interaction):
-            await self._resposta_canal_errado(interaction)
+        if await self._canal_invalido(interaction):
+            return
             return
 
         await interaction.response.defer()

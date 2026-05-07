@@ -206,8 +206,7 @@ class LojaCog(commands.Cog):
     @app_commands.command(name="loja", description="Ver a loja de itens disponíveis")
     async def loja(self, interaction: discord.Interaction):
         
-        if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message(f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", ephemeral=True)
+        if await self.bot.guard_channel(interaction):
             return
         
         try:
@@ -243,8 +242,7 @@ class LojaCog(commands.Cog):
     @app_commands.describe(item_id="ID do item que deseja comprar")
     async def comprar(self, interaction: discord.Interaction, item_id: int):
         
-        if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message(f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", ephemeral=True)
+        if await self.bot.guard_channel(interaction):
             return
         
         try:

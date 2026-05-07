@@ -21,7 +21,9 @@ class MemberLogs(commands.Cog):
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
         channel = member.guild.get_channel(self.log_channel_id)
-        ticket = member.guild.get_channel(1426275563378839606)
+        _cfg = getattr(self.bot, "config", None)
+        _tickets_id = _cfg.get("tickets_channel_id") if _cfg else None
+        ticket = member.guild.get_channel(_tickets_id) if _tickets_id else None
         duvidas = member.guild.get_channel(1426274988046155787)
 
         if channel:
@@ -31,7 +33,7 @@ class MemberLogs(commands.Cog):
                     f"Bem-vindo ao servidor {member.mention}!\n"
                     f"Aventure-se com meus comandos no Servidor!\n"
                     f"Para criar sua Guild, digite /guild_create (nome)\n"
-                    f"Para mais informações, abra um ticket em {ticket.mention},\n"
+                    f"Para mais informações, abra um ticket em {ticket.mention if ticket else 'tickets'},\n"
                     f"ou envie uma dúvida geral em {duvidas.mention}.\n"
                 ),
                 color=discord.Color.light_gray(),

@@ -293,10 +293,12 @@ class PremiumCog(commands.Cog):
     @app_commands.command(name="premium", description="Mostra informações sobre os planos premium")
     async def premium_info(self, interaction: discord.Interaction):
         
-        if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
-            ephemero = True
-        else:
-            ephemero = False
+        _cfg = self.bot.config
+        _cmd_ch = _cfg.get("commands_channel_id") if _cfg else None
+        ephemero = bool(
+            _cmd_ch and interaction.channel.id != _cmd_ch
+            and not interaction.user.guild_permissions.administrator
+        )
                 
         emoji_presente = discord.utils.get(interaction.guild.emojis, name="presente_fenrir")
         emoji_coins = discord.utils.get(interaction.guild.emojis, name="fenrir_coins")        
@@ -311,7 +313,7 @@ class PremiumCog(commands.Cog):
                 timestamp=discord.utils.utcnow()
             )
             
-            canal_premium = self.bot.get_channel(1429555260917284947)
+            canal_premium = self.bot.get_channel(_cfg.get("pix_channel_id") if _cfg else None)
             
             if canal_premium:
                 embed.add_field(
@@ -353,7 +355,7 @@ class PremiumCog(commands.Cog):
             self.salvar_dados(dados_usuarios)
             
             await self.enviar_embed_premium(usuario, plano_anterior, "removido")
-            canal_log = self.bot.get_channel(1427479688544129064)
+            canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
             if canal_log:
                 embed_log = discord.Embed(
                     title="🔧 Plano Premium Removido",

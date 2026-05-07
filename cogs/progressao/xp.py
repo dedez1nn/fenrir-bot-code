@@ -327,15 +327,21 @@ class XPCog(commands.Cog):
         
         self.dobro_xp_ativos = {}
 
-        self.cargos_por_nivel = {
+        _default_roles = {
             2: 1427356351516119180,
             5: 1427318172033351781,
             10: 1427318241197293711,
             20: 1427318396772417701,
             30: 1427318764814336213,
             40: 1427319349764423771,
-            50: 1427319515548483757
+            50: 1427319515548483757,
         }
+        _cfg = getattr(bot, "config", None)
+        _role_map = (_cfg.get("levelup_role_map") or {}) if _cfg else {}
+        self.cargos_por_nivel = (
+            {int(k): int(v) for k, v in _role_map.items()}
+            if _role_map else _default_roles
+        )
         
         self._restaurar_dobro_xp()
         self.voice_check_task = self.bot.loop.create_task(self.voice_xp_loop())
@@ -445,7 +451,7 @@ class XPCog(commands.Cog):
         if subiu_nivel:
             user = self.bot.get_user(int(user_id))
             if user:
-                canal_xp = self.bot.get_channel(1427310936263364690)
+                canal_xp = self.bot.get_channel(self.bot.config.get("levelup_channel_id") if self.bot.config else None)
                 
                 coins_ganhos = 0
                 bonus_info = []
@@ -461,7 +467,7 @@ class XPCog(commands.Cog):
                         if coins_cog:
                             await coins_cog.adicionar_coins_sem_multiplo(user_id, coins_ganhos, f"Bonus por alcançar nível {dados['nivel']}")
                             
-                            canal_log = self.bot.get_channel(1427479688544129064)
+                            canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
                             if canal_log:
                                 embed_log = discord.Embed(
                                     title="💰 Bonus de Coins por Level UP!",
@@ -511,7 +517,7 @@ class XPCog(commands.Cog):
                 except Exception as e:
                     print(f"❌ Erro ao enviar mensagem de up: {e}")
 
-                guild = self.bot.get_guild(1426202696955986022)
+                guild = self.bot.get_guild(self.bot.config.guild_id if self.bot.config else 0)
                 if guild:
                     member = guild.get_member(int(user_id))
                     if member:
@@ -582,7 +588,7 @@ class XPCog(commands.Cog):
         if subiu_nivel:
             user = self.bot.get_user(int(user_id))
             if user:
-                canal_xp = self.bot.get_channel(1427310936263364690)
+                canal_xp = self.bot.get_channel(self.bot.config.get("levelup_channel_id") if self.bot.config else None)
                 
                 coins_ganhos = 0
                 bonus_info = []
@@ -598,7 +604,7 @@ class XPCog(commands.Cog):
                         if coins_cog:
                             await coins_cog.adicionar_coins_sem_multiplo(user_id, coins_ganhos, f"Bonus por alcançar nível {dados['nivel']}")
                             
-                            canal_log = self.bot.get_channel(1427479688544129064)
+                            canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
                             if canal_log:
                                 embed_log = discord.Embed(
                                     title="💰 Bonus de Coins por Level UP!",
@@ -647,7 +653,7 @@ class XPCog(commands.Cog):
                 except Exception as e:
                     print(f"❌ Erro ao enviar mensagem de up: {e}")
 
-                guild = self.bot.get_guild(1426202696955986022)
+                guild = self.bot.get_guild(self.bot.config.guild_id if self.bot.config else 0)
                 if guild:
                     member = guild.get_member(int(user_id))
                     if member:
@@ -736,7 +742,7 @@ class XPCog(commands.Cog):
 
             self.salvar_dados()
 
-            canal_log = self.bot.get_channel(1427479688544129064)
+            canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
             user = self.bot.get_user(user_id)
             if canal_log and user:
                 embed_log = discord.Embed(
@@ -818,11 +824,11 @@ class XPCog(commands.Cog):
                 agora = time.time()
                 usuarios_que_ganharam = []
                 for user_id, data in self.voice_users.items():
-                    guild = self.bot.get_guild(1426202696955986022)
+                    guild = self.bot.get_guild(self.bot.config.guild_id if self.bot.config else 0)
                     if guild:
                         member = guild.get_member(int(user_id))
                         if member and member.voice and member.voice.channel:
-                            if member.voice.channel.id == 1427320869016829952:
+                            if member.voice.channel.id == (self.bot.config.get("afk_voice_channel_id") if self.bot.config else None):
                                 continue
                     
                     join_time = data["join_time"]
@@ -838,7 +844,7 @@ class XPCog(commands.Cog):
                             usuarios_que_ganharam.append((user, self.voice_xp_amount, xp_atual))
 
                 if usuarios_que_ganharam:
-                    canal_log = self.bot.get_channel(1427479688544129064)
+                    canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
                     descricao_lines = []
                     for user, xp_ganho, xp_total in usuarios_que_ganharam:
                         status_dobro = " (DOBRO DE XP!)" if self.verificar_dobro_xp(user.id) else ""
@@ -897,10 +903,10 @@ class XPCog(commands.Cog):
         if member.bot:
             return
         
-        if after.channel and after.channel.id == 1427320869016829952:
+        if after.channel and after.channel.id == (self.bot.config.get("afk_voice_channel_id") if self.bot.config else None):
             return
         
-        if before.channel and before.channel.id == 1427320869016829952:
+        if before.channel and before.channel.id == (self.bot.config.get("afk_voice_channel_id") if self.bot.config else None):
             return
             
         user_id = str(member.id)
@@ -939,7 +945,7 @@ class XPCog(commands.Cog):
 
         await self.adicionar_xp(user_id, reason="Mensagem no chat")
         
-        canal_log = self.bot.get_channel(1427479688544129064)
+        canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
         
         status_dobro = " (DOBRO DE XP ATIVO!)" if self.verificar_dobro_xp(message.author.id) else ""
         
@@ -960,11 +966,7 @@ class XPCog(commands.Cog):
     @app_commands.command(name="xp", description="Mostra o seu XP.")
     async def xp(self, interaction: discord.Interaction, membro: discord.Member = None):
         try:
-            if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
-                await interaction.response.send_message(
-                    f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", 
-                    ephemeral=True
-                )
+            if await self.bot.guard_channel(interaction):
                 return
             
             await interaction.response.defer(ephemeral=True)
@@ -1004,7 +1006,7 @@ class XPCog(commands.Cog):
                 )
             
             try:
-                canal_log = self.bot.get_channel(1427479688544129064)
+                canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
                 if canal_log:
                     embed_log = discord.Embed(
                         title="🔎 Consulta de XP",
@@ -1033,11 +1035,7 @@ class XPCog(commands.Cog):
     @app_commands.command(name="status_dobro_xp", description="Mostra status do seu dobro de XP")
     async def status_dobro_xp(self, interaction: discord.Interaction):
         try:
-            if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
-                await interaction.response.send_message(
-                    f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", 
-                    ephemeral=True
-                )
+            if await self.bot.guard_channel(interaction):
                 return
             
             await interaction.response.defer(ephemeral=True)
@@ -1113,11 +1111,7 @@ class XPCog(commands.Cog):
     )
     async def set_titulo(self, interaction: discord.Interaction, membro: discord.Member, titulo: str):
         try:
-            if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
-                await interaction.response.send_message(
-                    f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", 
-                    ephemeral=True
-                )
+            if await self.bot.guard_channel(interaction):
                 return
             
             user_id_str = str(membro.id)
@@ -1162,11 +1156,7 @@ class XPCog(commands.Cog):
     ])
     async def set_premium(self, interaction: discord.Interaction, membro: discord.Member, plano: str):
         try:
-            if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
-                await interaction.response.send_message(
-                    f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", 
-                    ephemeral=True
-                )
+            if await self.bot.guard_channel(interaction):
                 return
             
             user_id_str = str(membro.id)
@@ -1210,11 +1200,7 @@ class XPCog(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def reset_xp_all(self, interaction: discord.Interaction):
         try:
-            if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
-                await interaction.response.send_message(
-                    f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", 
-                    ephemeral=True
-                )
+            if await self.bot.guard_channel(interaction):
                 return
             
             for user_id, dados in self.user_data.items():
@@ -1232,7 +1218,7 @@ class XPCog(commands.Cog):
             self.user_data = {}
             self.salvar_dados()
             
-            canal_log = self.bot.get_channel(1427479688544129064)
+            canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
             embed_log = discord.Embed(
                 title="🔔 Remoção de Experiência Geral",
                 description= f"\n\nO Administrador {interaction.user.mention} zerou o XP de todos!\n"
@@ -1275,7 +1261,7 @@ class XPCog(commands.Cog):
                         if cargo and cargo in membro.roles:
                             await membro.remove_roles(cargo, reason="Reset de XP")
                             
-                canal_log = self.bot.get_channel(1427479688544129064)
+                canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
                 embed_log = discord.Embed(
                     title="🔔 Remoção de Experiência",
                     description= f"\n\nO Administrador {interaction.user.mention}\n"
@@ -1305,11 +1291,7 @@ class XPCog(commands.Cog):
     )
     async def retirar_xp(self, interaction: discord.Interaction, membro: discord.Member, quantidade: int):
         try:
-            if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
-                await interaction.response.send_message(
-                    f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", 
-                    ephemeral=True
-                )
+            if await self.bot.guard_channel(interaction):
                 return
             
             user_id = str(membro.id)
@@ -1339,7 +1321,7 @@ class XPCog(commands.Cog):
 
             self.salvar_dados()
             
-            canal_log = self.bot.get_channel(1427479688544129064)
+            canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
             embed_log = discord.Embed(
                 title="🔔 Remoção de Experiência",
                 description= f"\n\nO Administrador {interaction.user.mention}\n"
@@ -1391,7 +1373,7 @@ class XPCog(commands.Cog):
                 ephemeral=True
             )
 
-            canal_log = self.bot.get_channel(1427479688544129064)
+            canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
             if canal_log:
                 embed_log = discord.Embed(
                     title="🔔 XP Adicionado por ADM",
@@ -1414,11 +1396,7 @@ class XPCog(commands.Cog):
     )
     async def config_voz(self, interaction: discord.Interaction, intervalo: int, xp_quantidade: int):
         try:
-            if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
-                await interaction.response.send_message(
-                    f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", 
-                    ephemeral=True
-                )
+            if await self.bot.guard_channel(interaction):
                 return
             
             if intervalo < 1 or xp_quantidade < 1:
@@ -1446,11 +1424,7 @@ class XPCog(commands.Cog):
     @app_commands.command(name="status_voz", description="Mostra status do sistema de voz")
     async def status_voz(self, interaction: discord.Interaction):
         try:
-            if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
-                await interaction.response.send_message(
-                    f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", 
-                    ephemeral=True
-                )
+            if await self.bot.guard_channel(interaction):
                 return
             
             embed = discord.Embed(
@@ -1498,11 +1472,7 @@ class XPCog(commands.Cog):
     @app_commands.command(name="ranking", description="Mostra o ranking de Experiência com imagem")
     async def ranking(self, interaction: discord.Interaction):
         try:
-            if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
-                await interaction.response.send_message(
-                    f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", 
-                    ephemeral=True
-                )
+            if await self.bot.guard_channel(interaction):
                 return
             
             if not self.user_data:
@@ -1528,7 +1498,7 @@ class XPCog(commands.Cog):
             embed.set_footer(text="© 2025 ALCATEIA DO FENRIR")
             
             try:
-                canal_log = self.bot.get_channel(1427479688544129064)
+                canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
                 if canal_log:
                     embed_log = discord.Embed(
                         title="📊 Criação de Ranking",

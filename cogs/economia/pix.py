@@ -296,7 +296,7 @@ class PixCog(commands.Cog):
             )
             await canal.send(embed=embed)
 
-            canal_log = self.bot.get_channel(1427479688544129064)
+            canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
             if canal_log:
                 embed_log = discord.Embed(
                     title="💎 Plano Premium Ativado",
@@ -386,7 +386,7 @@ class PixCog(commands.Cog):
                         usuarios_removidos.append((user_id_str, plano_expirado))
                         
                         try:
-                            guild = self.bot.get_guild(1426202696955986022)
+                            guild = self.bot.get_guild(self.bot.config.guild_id if self.bot.config else 0)
                             if guild:
                                 member = guild.get_member(int(user_id_str))
                                 if member:
@@ -402,7 +402,7 @@ class PixCog(commands.Cog):
                     json.dump(user_data, f, indent=4, ensure_ascii=False)
 
                 
-                canal_log = self.bot.get_channel(1427479688544129064)
+                canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
                 if canal_log and usuarios_removidos:
                     embed = discord.Embed(
                         title="⏰ Premiums Expirados Removidos",
@@ -455,7 +455,7 @@ class PixCog(commands.Cog):
             with open("data/user_data.json", "w", encoding="utf-8") as f:
                 json.dump(user_data, f, indent=4, ensure_ascii=False)
             
-            canal_log = self.bot.get_channel(1427483403510354035)
+            canal_log = self.bot.get_channel(self.bot.config.get("coins_log_channel_id") if self.bot.config else None)
             if canal_log:
                 user = self.bot.get_user(user_id)
                 if user:
@@ -492,7 +492,7 @@ class PixCog(commands.Cog):
             with open("data/user_data.json", "w", encoding="utf-8") as f:
                 json.dump(user_data, f, indent=4, ensure_ascii=False)
             
-            canal_log = self.bot.get_channel(1427479688544129064)
+            canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
             if canal_log:
                 user = self.bot.get_user(user_id)
                 if user:

@@ -6,7 +6,6 @@ import os
 from datetime import datetime
 
 STEAM_API_KEY = os.getenv("STEAM_API_KEY")
-CANAL_COMANDOS = 1426205118293868748
 STEAM_BASE = "http://api.steampowered.com"
 STORE_BASE = "https://store.steampowered.com/api"
 
@@ -42,22 +41,14 @@ class SteamCog(commands.Cog):
             print(f"❌ Steam API error: {e}")
             return None
 
-    def _canal_invalido(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.guild_permissions.administrator:
-            return False
-        return interaction.channel.id != CANAL_COMANDOS
-
-    async def _resposta_canal_errado(self, interaction: discord.Interaction):
-        await interaction.response.send_message(
-            f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(CANAL_COMANDOS).mention}!",
-            ephemeral=True,
-        )
+    async def _canal_invalido(self, interaction: discord.Interaction) -> bool:
+        return await self.bot.guard_channel(interaction)
 
     @app_commands.command(name="steam-perfil", description="Exibe o perfil público de um usuário da Steam")
     @app_commands.describe(steamid="SteamID64 do usuário (número de 17 dígitos)")
     async def steam_perfil(self, interaction: discord.Interaction, steamid: str):
-        if self._canal_invalido(interaction):
-            await self._resposta_canal_errado(interaction)
+        if await self._canal_invalido(interaction):
+            return
             return
 
         await interaction.response.defer()
@@ -101,8 +92,8 @@ class SteamCog(commands.Cog):
     @app_commands.command(name="steam-biblioteca", description="Exibe a biblioteca de jogos de um usuário na Steam")
     @app_commands.describe(steamid="SteamID64 do usuário")
     async def steam_biblioteca(self, interaction: discord.Interaction, steamid: str):
-        if self._canal_invalido(interaction):
-            await self._resposta_canal_errado(interaction)
+        if await self._canal_invalido(interaction):
+            return
             return
 
         await interaction.response.defer()
@@ -141,8 +132,8 @@ class SteamCog(commands.Cog):
     @app_commands.command(name="steam-recentes", description="Exibe os jogos jogados nas últimas 2 semanas")
     @app_commands.describe(steamid="SteamID64 do usuário")
     async def steam_recentes(self, interaction: discord.Interaction, steamid: str):
-        if self._canal_invalido(interaction):
-            await self._resposta_canal_errado(interaction)
+        if await self._canal_invalido(interaction):
+            return
             return
 
         await interaction.response.defer()
@@ -178,8 +169,8 @@ class SteamCog(commands.Cog):
     @app_commands.command(name="steam-conquistas", description="Conquistas de um usuário em um jogo específico")
     @app_commands.describe(steamid="SteamID64 do usuário", appid="AppID do jogo (ex: 730 para CS2)")
     async def steam_conquistas(self, interaction: discord.Interaction, steamid: str, appid: str):
-        if self._canal_invalido(interaction):
-            await self._resposta_canal_errado(interaction)
+        if await self._canal_invalido(interaction):
+            return
             return
 
         await interaction.response.defer()
@@ -232,8 +223,8 @@ class SteamCog(commands.Cog):
     @app_commands.command(name="steam-amigos", description="Lista os amigos online de um usuário na Steam")
     @app_commands.describe(steamid="SteamID64 do usuário")
     async def steam_amigos(self, interaction: discord.Interaction, steamid: str):
-        if self._canal_invalido(interaction):
-            await self._resposta_canal_errado(interaction)
+        if await self._canal_invalido(interaction):
+            return
             return
 
         await interaction.response.defer()
@@ -286,8 +277,8 @@ class SteamCog(commands.Cog):
     @app_commands.command(name="steam-bans", description="Verifica o histórico de bans de um usuário na Steam")
     @app_commands.describe(steamid="SteamID64 do usuário")
     async def steam_bans(self, interaction: discord.Interaction, steamid: str):
-        if self._canal_invalido(interaction):
-            await self._resposta_canal_errado(interaction)
+        if await self._canal_invalido(interaction):
+            return
             return
 
         await interaction.response.defer()
@@ -326,8 +317,8 @@ class SteamCog(commands.Cog):
     @app_commands.command(name="steam-jogo", description="Exibe informações de um jogo na Steam")
     @app_commands.describe(appid="AppID do jogo (ex: 730 para CS2, 570 para Dota 2)")
     async def steam_jogo(self, interaction: discord.Interaction, appid: str):
-        if self._canal_invalido(interaction):
-            await self._resposta_canal_errado(interaction)
+        if await self._canal_invalido(interaction):
+            return
             return
 
         await interaction.response.defer()

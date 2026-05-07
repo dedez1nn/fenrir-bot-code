@@ -303,7 +303,7 @@ class FenrirCoins(commands.Cog):
     
     async def registrar_transacao(self, user_id: int, quantidade: int, motivo: str):
         try:
-            canal_log = self.bot.get_channel(1427483403510354035)
+            canal_log = self.bot.get_channel(self.bot.config.get("coins_log_channel_id") if self.bot.config else None)
             if canal_log:
                 user = self.bot.get_user(user_id)
                 if user:
@@ -333,7 +333,7 @@ class FenrirCoins(commands.Cog):
         
     async def enviar_log(self, user_id, acao, descricao, cor=discord.Color.dark_red()):
         try:
-            canal_log = self.bot.get_channel(1427483403510354035) 
+            canal_log = self.bot.get_channel(self.bot.config.get("coins_log_channel_id") if self.bot.config else None) 
             if canal_log:
                 user = self.bot.get_user(int(user_id))
                 user_mention = user.mention if user else f"Usuário {user_id}"
@@ -354,8 +354,7 @@ class FenrirCoins(commands.Cog):
     @app_commands.command(name="coins", description="Ver suas coins ou de outro usuário")
     async def coins(self, interaction: discord.Interaction, membro: discord.Member = None):
 
-        if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message(f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", ephemeral=True)
+        if await self.bot.guard_channel(interaction):
             return
         
         membro = membro or interaction.user
@@ -393,8 +392,7 @@ class FenrirCoins(commands.Cog):
     @app_commands.command(name="daily", description="Resgatar coins diárias")
     async def daily(self, interaction: discord.Interaction):
         
-        if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message(f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", ephemeral=True)
+        if await self.bot.guard_channel(interaction):
             return
         
         user_id = interaction.user.id
@@ -470,8 +468,7 @@ class FenrirCoins(commands.Cog):
     )
     async def transferir(self, interaction: discord.Interaction, membro: discord.Member, quantidade: int):
         
-        if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message(f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", ephemeral=True)
+        if await self.bot.guard_channel(interaction):
             return
         
         if quantidade <= 0:
@@ -532,14 +529,9 @@ class FenrirCoins(commands.Cog):
 
     @app_commands.command(name="ranking_coins", description="Exibe o Ranking de Coins do Servidor.")
     async def ranking_coins(self, interaction: discord.Interaction):
-        await interaction.response.defer(thinking=True)
-
-        if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
-            await interaction.followup.send(
-                f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !",
-                ephemeral=True
-            )
+        if await self.bot.guard_channel(interaction):
             return
+        await interaction.response.defer(thinking=True)
 
         view = RankingCoinsView(self)
 

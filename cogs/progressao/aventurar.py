@@ -123,7 +123,7 @@ class AventuraCog(commands.Cog):
                 sucesso = await level_cog.adicionar_xp(user_id, xp, motivo)
                 
                 if sucesso and xp > 0:
-                    canal_log = self.bot.get_channel(1427479688544129064)
+                    canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
                     if canal_log:
                         user = self.bot.get_user(user_id)
                         if isinstance(user, discord.User):
@@ -584,8 +584,7 @@ class AventuraCog(commands.Cog):
     @app_commands.command(name="aventura", description="🌌 Inicie uma aventura ou resgate uma pendente")
     async def aventura(self, interaction: discord.Interaction):
         
-        if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message(f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", ephemeral=True)
+        if await self.bot.guard_channel(interaction):
             return
         
         try:
@@ -683,8 +682,7 @@ class AventuraCog(commands.Cog):
     @app_commands.command(name="aventura_status", description="🌌 Verifique o status da sua aventura atual")
     async def aventura_status(self, interaction: discord.Interaction):
         
-        if interaction.channel.id != 1426205118293868748 and not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message(f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {self.bot.get_channel(1426205118293868748).mention} !", ephemeral=True)
+        if await self.bot.guard_channel(interaction):
             return
         
         try:

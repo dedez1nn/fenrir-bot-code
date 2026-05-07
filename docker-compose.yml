@@ -1,18 +1,46 @@
 services:
-  bot:
-    build: .
-    container_name: fenrir
+  postgres:
+    image: postgres:16-alpine
+    container_name: fenrir-postgres
     restart: unless-stopped
-    
     environment:
-      - DISCORD_TOKEN=${DISCORD_TOKEN}
-      - ACCESS_TOKEN=${ACCESS_TOKEN}
-    
+      POSTGRES_DB: ${POSTGRES_DB:-fenrir}
+      POSTGRES_USER: ${POSTGRES_USER:-fenrir}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      - ./:/app
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fenrir} -d ${POSTGRES_DB:-fenrir}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      # Apenas dev local — em produção o bot/api conectam via rede interna.
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    networks:
+      - fenrir_net
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fenrir-bot
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - TOKEN=${TOKEN}
+      - ACCESS_TOKEN=${ACCESS_TOKEN}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://fenrir:${POSTGRES_PASSWORD}@postgres:5432/fenrir}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - RIOT_API_KEY=${RIOT_API_KEY}
+      - RIOT_REGION=${RIOT_REGION:-br1}
+      - STEAM_API_KEY=${STEAM_API_KEY}
+      - GNEWS_API_KEY=${GNEWS_API_KEY}
+    volumes:
       - ./data:/app/data
       - ./logs:/app/logs
-    
     deploy:
       resources:
         limits:
@@ -21,10 +49,35 @@ services:
         reservations:
           cpus: '0.25'
           memory: 256M
-    
     networks:
-      - bot_network
+      - fenrir_net
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    container_name: fenrir-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql://fenrir:${POSTGRES_PASSWORD}@postgres:5432/fenrir}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
+      - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET}
+      - DISCORD_REDIRECT_URI=${DISCORD_REDIRECT_URI}
+      - JWT_SECRET=${JWT_SECRET}
+      - MP_WEBHOOK_SECRET=${MP_WEBHOOK_SECRET}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    networks:
+      - fenrir_net
 
 networks:
-  bot_network:
+  fenrir_net:
     driver: bridge
+
+volumes:
+  postgres_data:
