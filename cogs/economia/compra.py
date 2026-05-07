@@ -68,7 +68,7 @@ class CorPremiumModal(discord.ui.Modal, title="🎨 Escolha sua Cor Premium"):
         
         self.cor_select = discord.ui.TextInput(
             label="Digite o número da cor desejada (1-4)",
-            placeholder="1 - Vermelho 🔴 | 2 - Azul 🔵 | 3 - Verde 🟢 | 4 - Roxo 🟣",
+            placeholder="1 - Eco de Baldur 🌌 | 2 - Bruma de Jotunheim 🌫️ | 3 - Brilho de Freyja 💎 | 4 - Luz de Asgard 🌞",
             min_length=1,
             max_length=1,
             required=True
@@ -105,7 +105,8 @@ class CorPremiumModal(discord.ui.Modal, title="🎨 Escolha sua Cor Premium"):
                 cargo_novo = guild.get_role(cor_escolhida["id"])
                 if cargo_novo:
                     await member.add_roles(cargo_novo)
-                    
+                    asyncio.create_task(self._remover_cor_apos_tempo(member, cargo_novo))
+
                     await interaction.response.send_message(
                         f"✅ **Cor Premium Ativada!**\n"
                         f"🎨 Você escolheu: **{cor_escolhida['nome']}**\n"
@@ -140,6 +141,14 @@ class CorPremiumModal(discord.ui.Modal, title="🎨 Escolha sua Cor Premium"):
                 "❌ Digite apenas números (1, 2, 3 ou 4)!",
                 ephemeral=True
             )
+
+    async def _remover_cor_apos_tempo(self, member: discord.Member, cargo: discord.Role):
+        await asyncio.sleep(3600)
+        try:
+            if cargo in member.roles:
+                await member.remove_roles(cargo)
+        except Exception as e:
+            print(f"❌ Erro ao remover cor premium após 1 hora: {e}")
 
 class SelecionarTituloView(discord.ui.View):
     def __init__(self, compra_cog, user_id, interaction_original):
@@ -335,72 +344,48 @@ class CompraCog(commands.Cog):
             return False
 
     async def processar_cores_premium(self, interaction: discord.Interaction, user_id: int, item_nome: str, item_id: int):
+        MENSAGEM_CORES = (
+            f"✅ **Cores PREMIUM Compradas!**\n"
+            f"🎨 Agora você tem acesso às cores premium!\n\n"
+            f"**Cores disponíveis:**\n"
+            f"1️⃣ **Eco de Baldur** 🌌\n"
+            f"2️⃣ **Bruma de Jotunheim** 🌫️\n"
+            f"3️⃣ **Brilho de Freyja** 💎\n"
+            f"4️⃣ **Luz de Asgard** 🌞\n\n"
+            f"**Clique no botão abaixo para escolher sua cor:**"
+        )
         try:
             if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    f"✅ **Cores PREMIUM Compradas!**\n"
-                    f"🎨 Agora você tem acesso às cores premium!\n\n"
-                    f"**Cores disponíveis:**\n"
-                    f"1️⃣ **Vermelho Premium** 🔴\n"
-                    f"2️⃣ **Azul Premium** 🔵\n" 
-                    f"3️⃣ **Verde Premium** 🟢\n"
-                    f"4️⃣ **Roxo Premium** 🟣\n\n"
-                    f"**Clique no botão abaixo para escolher sua cor:**",
-                    view=SelecionarCorView(self, user_id, interaction),
-                    ephemeral=True
-                )
+                await interaction.response.send_message(MENSAGEM_CORES, view=SelecionarCorView(self, user_id, interaction), ephemeral=True)
             else:
-                await interaction.followup.send(
-                    f"✅ **Cores PREMIUM Compradas!**\n"
-                    f"🎨 Agora você tem acesso às cores premium!\n\n"
-                    f"**Cores disponíveis:**\n"
-                    f"1️⃣ **Vermelho Premium** 🔴\n"
-                    f"2️⃣ **Azul Premium** 🔵\n"
-                    f"3️⃣ **Verde Premium** 🟢\n"
-                    f"4️⃣ **Roxo Premium** 🟣\n\n"
-                    f"**Clique no botão abaixo para escolher sua cor:**",
-                    view=SelecionarCorView(self, user_id, interaction),
-                    ephemeral=True
-                )
+                await interaction.followup.send(MENSAGEM_CORES, view=SelecionarCorView(self, user_id, interaction), ephemeral=True)
             return True
         except Exception as e:
             print(f"❌ Erro ao processar cores premium: {e}")
             return False
 
-    async def processar_cor_premium(self, interaction: discord.Interaction, user_id: int):
+    async def processar_cor_premium(self, interaction: discord.Interaction, user_id: int, item_nome: str, item_id: int):
+        MENSAGEM_CORES = (
+            f"✅ **Cor Premium Comprada!**\n"
+            f"✨ Agora você pode escolher uma cor premium por **1 hora**!\n\n"
+            f"**Cores disponíveis:**\n"
+            f"1️⃣ **Eco de Baldur** 🌌\n"
+            f"2️⃣ **Bruma de Jotunheim** 🌫️\n"
+            f"3️⃣ **Brilho de Freyja** 💎\n"
+            f"4️⃣ **Luz de Asgard** 🌞\n\n"
+            f"**Clique no botão abaixo para escolher sua cor:**"
+        )
         try:
             if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    f"✅ **Cor Premium Comprada!**\n"
-                    f"✨ Agora você pode escolher uma cor premium por **1 hora**!\n\n"
-                    f"**Cores disponíveis:**\n"
-                    f"1️⃣ **Vermelho Premium** 🔴\n"
-                    f"2️⃣ **Azul Premium** 🔵\n"
-                    f"3️⃣ **Verde Premium** 🟢\n"
-                    f"4️⃣ **Roxo Premium** 🟣\n\n"
-                    f"**Clique no botão abaixo para escolher sua cor:**",
-                    view=SelecionarCorView(self, user_id, interaction),
-                    ephemeral=True
-                )
+                await interaction.response.send_message(MENSAGEM_CORES, view=SelecionarCorView(self, user_id, interaction), ephemeral=True)
             else:
-                await interaction.followup.send(
-                    f"✅ **Cor Premium Comprada!**\n"
-                    f"✨ Agora você pode escolher uma cor premium por **1 hora**!\n\n"
-                    f"**Cores disponíveis:**\n"
-                    f"1️⃣ **Vermelho Premium** 🔴\n"
-                    f"2️⃣ **Azul Premium** 🔵\n"
-                    f"3️⃣ **Verde Premium** 🟢\n"
-                    f"4️⃣ **Roxo Premium** 🟣\n\n"
-                    f"**Clique no botão abaixo para escolher sua cor:**",
-                    view=SelecionarCorView(self, user_id, interaction),
-                    ephemeral=True
-                )
+                await interaction.followup.send(MENSAGEM_CORES, view=SelecionarCorView(self, user_id, interaction), ephemeral=True)
             return True
         except Exception as e:
             print(f"❌ Erro ao processar cor premium: {e}")
             return False
 
-    async def processar_nitro(self, interaction: discord.Interaction, item_nome: str):
+    async def processar_nitro(self, interaction: discord.Interaction, user_id: int, item_nome: str, item_id: int):
         try:
             await self.enviar_mensagem_ticket(interaction, item_nome)
             return True
@@ -408,7 +393,7 @@ class CompraCog(commands.Cog):
             print(f"❌ Erro ao processar nitro: {e}")
             return False
 
-    async def processar_bot_personalizado(self, interaction: discord.Interaction, item_nome: str):
+    async def processar_bot_personalizado(self, interaction: discord.Interaction, user_id: int, item_nome: str, item_id: int):
         try:
             await self.enviar_mensagem_ticket(interaction, item_nome)
             return True
@@ -416,7 +401,7 @@ class CompraCog(commands.Cog):
             print(f"❌ Erro ao processar bot personalizado: {e}")
             return False
 
-    async def processar_emoji_personalizado(self, interaction: discord.Interaction, item_nome: str):
+    async def processar_emoji_personalizado(self, interaction: discord.Interaction, user_id: int, item_nome: str, item_id: int):
         try:
             await self.enviar_mensagem_ticket(interaction, item_nome)
             return True
@@ -424,7 +409,7 @@ class CompraCog(commands.Cog):
             print(f"❌ Erro ao processar emoji personalizado: {e}")
             return False
 
-    async def processar_script_personalizado(self, interaction: discord.Interaction, item_nome: str):
+    async def processar_script_personalizado(self, interaction: discord.Interaction, user_id: int, item_nome: str, item_id: int):
         try:
             await self.enviar_mensagem_ticket(interaction, item_nome)
             return True
@@ -433,7 +418,7 @@ class CompraCog(commands.Cog):
             return False
 
 
-    async def processar_roubo_coins(self, interaction: discord.Interaction):
+    async def processar_roubo_coins(self, interaction: discord.Interaction, user_id: int, item_nome: str, item_id: int):
         try:
             if not interaction.response.is_done():
                 await interaction.response.send_message(
@@ -456,7 +441,7 @@ class CompraCog(commands.Cog):
             print(f"❌ Erro ao processar roubo de coins: {e}")
             return False
 
-    async def processar_dobro_experiencia(self, interaction: discord.Interaction, user_id: int):
+    async def processar_dobro_experiencia(self, interaction: discord.Interaction, user_id: int, item_nome: str, item_id: int):
         try:
             xp_cog = self.bot.get_cog("XPCog")
             if xp_cog:
@@ -493,43 +478,33 @@ class CompraCog(commands.Cog):
             print(f"❌ Erro ao processar dobro de experiência: {e}")
             return False
 
-    async def processar_bilheteria(self, interaction: discord.Interaction, user_id: int):
+    async def processar_bilheteria(self, interaction: discord.Interaction, user_id: int, item_nome: str, item_id: int):
         try:
             coins_ganhos = random.randint(50000, 250000)
-            
+
             if coins_ganhos > 120000:
-                texto = f"🎁 **Bilheteria Sortuda!**\n"
-                texto_2 = f"🎁 Você ganhou **💎 {coins_ganhos - 1200} coins**!\n"
+                texto = "🎁 **Bilheteria Sortuda!**\n"
+                texto_2 = f"🎉 Você ganhou **💎 {coins_ganhos:,} coins**!\n"
             elif coins_ganhos == 120000:
-                texto = f"😂 **Bilheteria Devolvida!**\n"
-                texto_2 = f"🎁 Você teve suas coins devolvidas, **💎 tente a sorte novamente**!\n"
+                texto = "😂 **Bilheteria Empatada!**\n"
+                texto_2 = f"💎 Você recebeu **{coins_ganhos:,} coins** — sorte mediana!\n"
             else:
-                texto = f"😢 **Você Perdeu!**\n"
-                texto_2 = f"🎁 Você perdeu **💎 {1200 - coins_ganhos} coins**!\n"
-                
-            mensagem_final = (
-                texto + 
-                texto_2 + 
-                f"💰 Volte em **24 horas** para tentar novamente!"
-            )
-            
+                texto = "😢 **Bilheteria Fraca!**\n"
+                texto_2 = f"💎 Você recebeu apenas **{coins_ganhos:,} coins**.\n"
+
+            mensagem_final = texto + texto_2 + "💰 Volte em **24 horas** para tentar novamente!"
+
             coins_cog = self.get_coins_cog()
             if coins_cog:
                 await coins_cog.adicionar_coins(user_id, coins_ganhos)
-                
+
             if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    mensagem_final,
-                    ephemeral=False
-                )
+                await interaction.response.send_message(mensagem_final, ephemeral=False)
             else:
-                await interaction.followup.send(
-                    mensagem_final,
-                    ephemeral=False
-                )
-            
+                await interaction.followup.send(mensagem_final, ephemeral=False)
+
             return True
-            
+
         except Exception as e:
             print(f"❌ Erro ao processar bilheteria: {e}")
             return False
@@ -555,7 +530,7 @@ class CompraCog(commands.Cog):
             print(f"❌ Erro ao processar renomear canal: {e}")
             return False
 
-    async def processar_portao_alcateia(self, interaction: discord.Interaction, user_id: int, item_nome: str):
+    async def processar_portao_alcateia(self, interaction: discord.Interaction, user_id: int, item_nome: str, item_id: int):
         try:
             cargo_portao_id = 1428715049928757318
             guild = interaction.guild
@@ -588,7 +563,7 @@ class CompraCog(commands.Cog):
             await self.enviar_mensagem_ticket(interaction, item_nome)
             return False
 
-    async def processar_enquete(self, interaction: discord.Interaction):
+    async def processar_enquete(self, interaction: discord.Interaction, user_id: int, item_nome: str, item_id: int):
         try:
             if not interaction.response.is_done():
                 await interaction.response.send_message(
@@ -609,7 +584,7 @@ class CompraCog(commands.Cog):
             print(f"❌ Erro ao processar enquete: {e}")
             return False
 
-    async def processar_fixar_mensagem(self, interaction: discord.Interaction):
+    async def processar_fixar_mensagem(self, interaction: discord.Interaction, user_id: int, item_nome: str, item_id: int):
         try:
             if not interaction.response.is_done():
                 await interaction.response.send_message(

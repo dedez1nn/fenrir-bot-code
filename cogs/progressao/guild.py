@@ -960,31 +960,36 @@ class GuildSystem(commands.Cog):
                 await interaction.followup.send("❌ Guild não encontrada!")
                 return
             
-            coins_usuario = self.obter_coins_usuario(interaction.user.id)
-            
+            coins_cog = self.bot.get_cog("FenrirCoins")
+            if not coins_cog:
+                await interaction.followup.send("❌ Sistema de coins indisponível no momento.")
+                return
+
+            coins_usuario = await coins_cog.obter_coins(interaction.user.id)
+
             if coins_usuario < quantidade:
                 await interaction.followup.send(f"❌ Você não tem coins suficientes! Você tem {coins_usuario:,} coins.")
                 return
-            
-            novo_saldo_usuario = coins_usuario - quantidade
-            self.atualizar_coins_usuario(interaction.user.id, novo_saldo_usuario)
-            
+
+            await coins_cog.remover_coins(interaction.user.id, quantidade, f"Depósito no banco da guild {guild_data['nome']}")
+
             guild_data["banco"] += quantidade
             dados[guild_id] = guild_data
-            
+
             if self.salvar_dados(dados):
+                novo_saldo = await coins_cog.obter_coins(interaction.user.id)
                 embed = discord.Embed(
                     title="💰 Depósito Realizado!",
                     description=f"Você depositou **{quantidade:,} coins** no banco da guild.",
                     color=discord.Color.green()
                 )
                 embed.add_field(name="🏦 Saldo Anterior", value=f"{coins_usuario:,} coins", inline=True)
-                embed.add_field(name="💳 Saldo Atual", value=f"{novo_saldo_usuario:,} coins", inline=True)
+                embed.add_field(name="💳 Saldo Atual", value=f"{novo_saldo:,} coins", inline=True)
                 embed.add_field(name="🏰 Banco da Guild", value=f"{guild_data['banco']:,} coins", inline=True)
-                
+
                 await interaction.followup.send(embed=embed)
             else:
-                self.atualizar_coins_usuario(interaction.user.id, coins_usuario)
+                await coins_cog.adicionar_coins_sem_multiplo(interaction.user.id, quantidade, "Estorno depósito guild (falha ao salvar)")
                 await interaction.followup.send("❌ Erro ao realizar depósito!")
             
         except Exception as e:
@@ -1022,27 +1027,32 @@ class GuildSystem(commands.Cog):
                 await interaction.followup.send(f"❌ O banco da guild não tem coins suficientes! Saldo: {guild_data['banco']:,} coins")
                 return
             
-            coins_usuario = self.obter_coins_usuario(interaction.user.id)
-            
+            coins_cog = self.bot.get_cog("FenrirCoins")
+            if not coins_cog:
+                await interaction.followup.send("❌ Sistema de coins indisponível no momento.")
+                return
+
+            coins_usuario = await coins_cog.obter_coins(interaction.user.id)
+
             guild_data["banco"] -= quantidade
             dados[guild_id] = guild_data
-            
-            novo_saldo_usuario = coins_usuario + quantidade
-            self.atualizar_coins_usuario(interaction.user.id, novo_saldo_usuario)
-            
+
             if self.salvar_dados(dados):
+                await coins_cog.adicionar_coins_sem_multiplo(interaction.user.id, quantidade, f"Retirada do banco da guild {guild_data['nome']}")
+                novo_saldo = await coins_cog.obter_coins(interaction.user.id)
                 embed = discord.Embed(
                     title="💰 Retirada Realizada!",
                     description=f"Você retirou **{quantidade:,} coins** do banco da guild.",
                     color=discord.Color.green()
                 )
                 embed.add_field(name="🏦 Saldo Anterior", value=f"{coins_usuario:,} coins", inline=True)
-                embed.add_field(name="💳 Saldo Atual", value=f"{novo_saldo_usuario:,} coins", inline=True)
+                embed.add_field(name="💳 Saldo Atual", value=f"{novo_saldo:,} coins", inline=True)
                 embed.add_field(name="🏰 Banco da Guild", value=f"{guild_data['banco']:,} coins", inline=True)
-                
+
                 await interaction.followup.send(embed=embed)
             else:
-                self.atualizar_coins_usuario(interaction.user.id, coins_usuario)
+                guild_data["banco"] += quantidade
+                self.salvar_dados(dados)
                 await interaction.followup.send("❌ Erro ao realizar retirada!")
             
         except Exception as e:

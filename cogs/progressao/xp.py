@@ -326,7 +326,7 @@ class XPCog(commands.Cog):
         self.bonus_coins_por_nivel = 50000
         
         self.dobro_xp_ativos = {}
-        
+
         self.cargos_por_nivel = {
             2: 1427356351516119180,
             5: 1427318172033351781,
@@ -337,8 +337,20 @@ class XPCog(commands.Cog):
             50: 1427319515548483757
         }
         
+        self._restaurar_dobro_xp()
         self.voice_check_task = self.bot.loop.create_task(self.voice_xp_loop())
         self.dobro_xp_check_task = self.bot.loop.create_task(self.dobro_xp_loop())
+
+    def _restaurar_dobro_xp(self):
+        agora = time.time()
+        for user_id_str, dados in self.user_data.items():
+            expiracao = dados.get("dobro_expiracao")
+            if expiracao:
+                if expiracao > agora:
+                    self.dobro_xp_ativos[user_id_str] = expiracao
+                else:
+                    dados["dobro"] = False
+                    dados.pop("dobro_expiracao", None)
 
     def carregar_dados(self):
         if os.path.exists(self.ARQUIVO_DADOS):
@@ -552,15 +564,6 @@ class XPCog(commands.Cog):
             coins_por_atividade = self.coins_por_vitoria
                 
         if coins_por_atividade > 0:
-            bonus_guild_coins = multiplicador_guild - 1
-            bonus_premium_coins = multiplicador_coins_premium - 1
-            
-            multiplicador_total_coins = 1 + bonus_guild_coins + bonus_premium_coins
-            
-            coins_base = coins_por_atividade
-            coins_por_atividade = coins_por_atividade * multiplicador_total_coins
-
-            
             coins_cog = self.bot.get_cog("FenrirCoins")
             if coins_cog:
                 await coins_cog.adicionar_coins(user_id, coins_por_atividade, reason)
@@ -591,16 +594,9 @@ class XPCog(commands.Cog):
                 
                 if coins_ganhos > 0:
                     try:
-                        bonus_guild_coins = multiplicador_guild - 1
-                        bonus_premium_coins = multiplicador_coins_premium - 1
-                        multiplicador_total_coins = 1 + bonus_guild_coins + bonus_premium_coins
-                        
-                        coins_base_bonus = coins_ganhos
-                        coins_ganhos = coins_ganhos * multiplicador_total_coins
-                        
                         coins_cog = self.bot.get_cog("FenrirCoins")
                         if coins_cog:
-                            await coins_cog.adicionar_coins(user_id, coins_ganhos, f"Bonus por alcançar nível {dados['nivel']}")
+                            await coins_cog.adicionar_coins_sem_multiplo(user_id, coins_ganhos, f"Bonus por alcançar nível {dados['nivel']}")
                             
                             canal_log = self.bot.get_channel(1427479688544129064)
                             if canal_log:
@@ -687,10 +683,6 @@ class XPCog(commands.Cog):
                         cargos_para_remover.append(cargo)
                         print(f"❌ Marcado para remover: {cargo.name}")
 
-            if cargos_para_adicionar and cargo_atual and cargo_atual not in cargos_para_adicionar:
-                cargos_para_remover.append(cargo_atual)
-                print(f"🔄 Marcado para remover cargo anterior: {cargo_atual.name}")
-
             if cargos_para_remover:
                 try:
                     await member.remove_roles(*cargos_para_remover, reason=f"Progressão de Nível - {nivel}")
@@ -737,10 +729,11 @@ class XPCog(commands.Cog):
             expiracao = agora + (duracao_horas * 3600)
             
             self.dobro_xp_ativos[user_id_str] = expiracao
-            
+
             dados = self.obter_dados_usuario(user_id_str)
             dados["dobro"] = True
-            
+            dados["dobro_expiracao"] = expiracao
+
             self.salvar_dados()
 
             canal_log = self.bot.get_channel(1427479688544129064)
@@ -769,19 +762,15 @@ class XPCog(commands.Cog):
 
     def verificar_dobro_xp(self, user_id: int) -> bool:
         user_id_str = str(user_id)
-        
+
         if user_id_str in self.dobro_xp_ativos:
             if time.time() < self.dobro_xp_ativos[user_id_str]:
                 return True
-            else:
-                del self.dobro_xp_ativos[user_id_str]
-                if user_id_str in self.user_data:
-                    self.user_data[user_id_str]["dobro"] = False
-                return False
-        
-        if user_id_str in self.user_data:
-            return self.user_data[user_id_str].get("dobro", False)
-        
+            del self.dobro_xp_ativos[user_id_str]
+            if user_id_str in self.user_data:
+                self.user_data[user_id_str]["dobro"] = False
+                self.user_data[user_id_str].pop("dobro_expiracao", None)
+
         return False
 
     async def dobro_xp_loop(self):
@@ -841,10 +830,12 @@ class XPCog(commands.Cog):
                     
                     if agora - last_xp_time >= self.voice_xp_interval:
                         self.voice_users[user_id]["last_xp_time"] = agora
-                        
+
                         user = self.bot.get_user(int(user_id))
                         if user:
-                            usuarios_que_ganharam.append((user, self.voice_xp_amount, self.user_data[user_id]["xp"]))
+                            await self.adicionar_xp(user.id, self.voice_xp_amount, "Voz no chat")
+                            xp_atual = self.user_data.get(user_id, {}).get("xp", 0)
+                            usuarios_que_ganharam.append((user, self.voice_xp_amount, xp_atual))
 
                 if usuarios_que_ganharam:
                     canal_log = self.bot.get_channel(1427479688544129064)
@@ -955,8 +946,8 @@ class XPCog(commands.Cog):
         embed_log = discord.Embed(
             title="🌟 Ganho de Experiência",
             description=(
-                f"**O membro {message.author.mention} ganhou {self.xp_por_mensagem * 2 if status_dobro else self.xp_por_mensagem} XP{status_dobro}**\n"
-                f"**Motivo:** Mensagem no chat\n"
+                f"**O membro {message.author.mention} ganhou XP{status_dobro}**\n"
+                f"**Base:** {self.xp_por_mensagem} XP | **Motivo:** Mensagem no chat\n"
                 f"**Novo XP:** {self.user_data[user_id]['xp']}"
             ),
             color=discord.Color.dark_red(),
@@ -1067,9 +1058,14 @@ class XPCog(commands.Cog):
                     tempo_restante = expiracao - time.time()
                     horas = int(tempo_restante // 3600)
                     minutos = int((tempo_restante % 3600) // 60)
-                    
-                    multiplicador_total = multiplicador_xp_premium * 2
-                    
+
+                    guild_cog = self.bot.get_cog("GuildSystem")
+                    multiplicador_guild = 1.0
+                    dados_user = self.user_data.get(user_id, {})
+                    if guild_cog and dados_user.get("guild"):
+                        multiplicador_guild = guild_cog.calcular_multiplicador_guild(dados_user["guild"])
+                    multiplicador_total = 1 + (multiplicador_guild - 1) + (multiplicador_xp_premium - 1) + 1
+
                     embed.description = (
                         f"✅ **DOBRO DE XP ATIVO!**\n"
                         f"**Tempo restante:** {horas}h {minutos}m\n"
@@ -1267,13 +1263,14 @@ class XPCog(commands.Cog):
         try:
             user_id = str(membro.id)
             if user_id in self.user_data:
+                nivel_antes = self.user_data[user_id]["nivel"]
                 self.user_data[user_id]["xp"] = 0
                 self.user_data[user_id]["nivel"] = 1
                 self.salvar_dados()
                 await interaction.response.send_message(f"✅ XP de {membro.mention} foi zerado!", ephemeral=True)
-                
+
                 for nivel_requerido, cargo_id in self.cargos_por_nivel.items():
-                    if self.user_data[user_id]["nivel"] >= nivel_requerido:
+                    if nivel_antes >= nivel_requerido:
                         cargo = interaction.guild.get_role(cargo_id)
                         if cargo and cargo in membro.roles:
                             await membro.remove_roles(cargo, reason="Reset de XP")
@@ -1375,7 +1372,39 @@ class XPCog(commands.Cog):
         quantidade="Quantidade de XP a adicionar"
     )
     async def adicionar_xp_adm(self, interaction: discord.Interaction, membro: discord.Member, quantidade: int):
-        ...
+        try:
+            if quantidade <= 0:
+                await interaction.response.send_message("❌ A quantidade deve ser maior que 0.", ephemeral=True)
+                return
+
+            user_id = str(membro.id)
+            dados = self.obter_dados_usuario(user_id)
+            xp_antes = dados["xp"]
+            nivel_antes = dados["nivel"]
+
+            await self.adicionar_xp_sem_multiplo(membro.id, quantidade, "Adição manual por ADM")
+
+            await interaction.response.send_message(
+                f"✅ **{quantidade} XP** adicionados a {membro.mention}!\n"
+                f"**Nível:** {nivel_antes} → {dados['nivel']}\n"
+                f"**XP:** {xp_antes} → {dados['xp']}",
+                ephemeral=True
+            )
+
+            canal_log = self.bot.get_channel(1427479688544129064)
+            if canal_log:
+                embed_log = discord.Embed(
+                    title="🔔 XP Adicionado por ADM",
+                    description=f"**{interaction.user.mention}** adicionou **{quantidade} XP** a {membro.mention}",
+                    color=discord.Color.green(),
+                    timestamp=discord.utils.utcnow()
+                )
+                embed_log.set_thumbnail(url=membro.display_avatar.url)
+                await canal_log.send(embed=embed_log)
+
+        except Exception as e:
+            print(f"Erro no comando adicionar-xp: {e}")
+            await interaction.response.send_message("❌ Ocorreu um erro ao processar o comando.", ephemeral=True)
 
     @app_commands.command(name="config_voz", description="Configurar XP por tempo em voz (ADM)")
     @app_commands.checks.has_permissions(administrator=True)

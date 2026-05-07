@@ -17,9 +17,6 @@ class LojaView(discord.ui.View):
         
         self.update_buttons()
         
-    def get_cooldown_cog(self):
-        return self.bot.get_cog("CooldownCog")
-
     def update_buttons(self):
         """Atualiza o estado dos botões baseado na página atual"""
         self.botao_anterior.disabled = self.page == 0
@@ -256,9 +253,7 @@ class LojaCog(commands.Cog):
             await interaction.response.defer(ephemeral=False, thinking=True)
             print("✅ Comprar: Resposta deferida")
 
-            itens_validos = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
-            
-            if item_id not in itens_validos:
+            if item_id < 1 or item_id > len(self.loja_data["itens"]):
                 await interaction.followup.send(
                     "❌ **ID do item inválido!**\n"
                     "Verifique a lista de itens na loja e tente novamente.",

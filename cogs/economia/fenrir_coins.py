@@ -230,6 +230,10 @@ class FenrirCoins(commands.Cog):
             }
         return self.user_data[user_id_str]
 
+    async def obter_coins(self, user_id: int) -> int:
+        dados = self.obter_dados_usuario(user_id)
+        return dados["coins"]
+
     def calcular_multiplicador_premium(self, user_id: int) -> tuple:
         user_id_str = str(user_id)
         if user_id_str not in self.user_data:
@@ -418,38 +422,44 @@ class FenrirCoins(commands.Cog):
         
         streak = dados["daily_streak"]
         recompensa_base = self.daily_coins + (streak * self.streak_bonus)
-        
+
+        guild_cog = self.bot.get_cog("GuildSystem")
+        multiplicador_guild = 1.0
+        if guild_cog and dados.get("guild"):
+            multiplicador_guild = guild_cog.calcular_multiplicador_guild(dados["guild"])
+
         _, multiplicador_coins_premium = self.calcular_multiplicador_premium(user_id)
-        recompensa_final = recompensa_base * multiplicador_coins_premium
-        
+        multiplicador_total = 1 + (multiplicador_guild - 1) + (multiplicador_coins_premium - 1)
+        recompensa_final = int(recompensa_base * multiplicador_total)
+
         dados["daily_streak"] = streak + 1
         dados["last_daily"] = agora
         dados["coins"] += recompensa_final
         dados["total_ganho"] += recompensa_final
         self.salvar_dados()
-        
+
         embed = discord.Embed(
             title="🎁 Recompensa Diária Resgatada!",
             description=f"**+{recompensa_final} coins** adicionados à sua carteira!",
             color=discord.Color.green()
         )
         embed.add_field(name="🔥 Sequência", value=f"{dados['daily_streak']} dias", inline=True)
-        
+
         proxima_recompensa = self.daily_coins + (dados['daily_streak'] * self.streak_bonus)
-        proxima_recompensa_final = proxima_recompensa * multiplicador_coins_premium
+        proxima_recompensa_final = int(proxima_recompensa * multiplicador_total)
         embed.add_field(name="💰 Próximo Daily", value=f"+{proxima_recompensa_final} coins", inline=True)
-        
-        if multiplicador_coins_premium > 1:
-            embed.add_field(name="💎 Multiplicador Premium", value=f"{multiplicador_coins_premium}x", inline=True)
-        
+
+        if multiplicador_total > 1:
+            embed.add_field(name="⚡ Multiplicador Total", value=f"{multiplicador_total:.1f}x", inline=True)
+
         embed.set_footer(text="Volte amanhã para continuar sua sequência!")
-        
+
         await interaction.response.send_message(embed=embed)
-        
+
         await self.enviar_log(
-            interaction.user.id, 
-            "Daily Resgatado", 
-            f"**Ação:** Resgatou daily com sucesso\n**Recompensa:** {recompensa_final} coins\n**Streak:** {dados['daily_streak']} dias\n**Multiplicador:** {multiplicador_coins_premium}x",
+            interaction.user.id,
+            "Daily Resgatado",
+            f"**Ação:** Resgatou daily com sucesso\n**Recompensa:** {recompensa_final} coins\n**Streak:** {dados['daily_streak']} dias\n**Multiplicador Total:** {multiplicador_total:.1f}x",
             discord.Color.green()
         )
 
@@ -497,6 +507,7 @@ class FenrirCoins(commands.Cog):
         dados_destino = self.obter_dados_usuario(membro.id)
         saldo_anterior_destino = dados_destino["coins"]
         dados_destino["coins"] += quantidade
+        dados_destino["total_ganho"] = dados_destino.get("total_ganho", 0) + quantidade
         self.salvar_dados()
         
         embed = discord.Embed(
