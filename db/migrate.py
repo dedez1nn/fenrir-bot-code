@@ -226,6 +226,129 @@ async def _import_cooldowns(conn, raw: Dict[str, Any]) -> int:
     return len(rows)
 
 
+async def _import_guilds(conn, raw: Dict[str, Any]) -> int:
+    """Importa guilds_data.json para as tabelas guilds/guild_members/guild_invites/guild_alliances."""
+    import time as _time
+
+    count = 0
+    guild_ids = [k for k in raw if k != "raids_ativas"]
+
+    for gid in guild_ids:
+        gdata = raw[gid]
+        try:
+            await conn.execute(
+                """
+                INSERT INTO guilds
+                    (guild_id, nome, lider, banco, nivel, xp, motto, emoji,
+                     data_criacao, ultima_raid, data_alianca)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+                ON CONFLICT (guild_id) DO NOTHING
+                """,
+                gid,
+                str(gdata.get("nome", "")),
+                int(gdata.get("lider", 0)),
+                int(gdata.get("banco", 0)),
+                int(gdata.get("nivel", 1)),
+                int(gdata.get("xp", 0)),
+                str(gdata.get("motto", "")),
+                str(gdata.get("emoji", "")),
+                float(gdata.get("data_criacao", _time.time())),
+                float(gdata.get("ultima_raid", 0)),
+                float(gdata.get("data_alianca", 0)),
+            )
+            count += 1
+
+            for uid_str, mdata in gdata.get("membros", {}).items():
+                try:
+                    await conn.execute(
+                        """
+                        INSERT INTO guild_members (guild_id, user_id, cargo, entrada, ativo)
+                        VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING
+                        """,
+                        gid,
+                        int(uid_str),
+                        str(mdata.get("cargo", "Membro")),
+                        float(mdata.get("entrada", _time.time())),
+                        bool(mdata.get("ativo", True)),
+                    )
+                except Exception as exc:
+                    log.error("Erro ao importar membro %s/%s: %s", gid, uid_str, exc)
+
+            for inv_id, inv_data in gdata.get("convites", {}).items():
+                try:
+                    await conn.execute(
+                        """
+                        INSERT INTO guild_invites
+                            (invite_id, guild_id, usuario, criador, data, expiracao)
+                        VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING
+                        """,
+                        inv_id,
+                        gid,
+                        int(inv_data.get("usuario", 0)),
+                        int(inv_data.get("criador", 0)),
+                        float(inv_data.get("data", _time.time())),
+                        float(inv_data.get("expiracao", _time.time() + 86400)),
+                    )
+                except Exception as exc:
+                    log.error("Erro ao importar convite %s: %s", inv_id, exc)
+
+            for ally_id in gdata.get("aliancas", []):
+                try:
+                    await conn.execute(
+                        "INSERT INTO guild_alliances (guild_id, ally_id) VALUES ($1,$2) ON CONFLICT DO NOTHING",
+                        gid, str(ally_id),
+                    )
+                except Exception as exc:
+                    log.error("Erro ao importar aliança %s↔%s: %s", gid, ally_id, exc)
+
+        except Exception as exc:
+            log.error("Erro ao importar guild %s: %s", gid, exc)
+
+    return count
+
+
+async def _import_adventures(conn, raw: Dict[str, Any]) -> int:
+    """Importa aventuras_data.json para a tabela adventures."""
+    from datetime import timezone as _tz
+
+    count = 0
+    for uid_str, adata in raw.items():
+        try:
+            inicio = adata.get("inicio")
+            if isinstance(inicio, str):
+                from datetime import datetime as _dt
+                inicio = _dt.fromisoformat(inicio).replace(tzinfo=_tz.utc)
+            elif isinstance(inicio, float):
+                from datetime import datetime as _dt
+                inicio = _dt.fromtimestamp(inicio, tz=_tz.utc)
+            else:
+                continue  # início inválido → pular
+
+            situacao = adata.get("situacao", {})
+            canal_id = adata.get("canal_id")
+            notificado = bool(adata.get("notificado", False))
+
+            import json as _json
+            await conn.execute(
+                """
+                INSERT INTO adventures
+                    (user_id, inicio, canal_id, situacao, notificado)
+                VALUES ($1,$2,$3,$4,$5)
+                ON CONFLICT (user_id) DO NOTHING
+                """,
+                int(uid_str),
+                inicio,
+                int(canal_id) if canal_id else None,
+                _json.dumps(situacao),
+                notificado,
+            )
+            count += 1
+        except Exception as exc:
+            log.error("Erro ao importar aventura do usuário %s: %s", uid_str, exc)
+
+    return count
+
+
 async def import_legacy_json(pool, *, force: bool = False) -> Dict[str, int]:
     """Importa JSONs legados quando as tabelas alvo estão vazias.
 
@@ -234,7 +357,7 @@ async def import_legacy_json(pool, *, force: bool = False) -> Dict[str, int]:
     pular as checagens de tabela vazia (raro — normalmente só faz sentido em
     setup inicial).
     """
-    counters = {"users": 0, "items": 0, "cooldowns": 0}
+    counters = {"users": 0, "items": 0, "cooldowns": 0, "guilds": 0, "adventures": 0}
 
     if pool is None:
         return counters
@@ -263,5 +386,19 @@ async def import_legacy_json(pool, *, force: bool = False) -> Dict[str, int]:
             if isinstance(data, dict) and data:
                 counters["cooldowns"] = await _import_cooldowns(conn, data)
                 log.info("Importados %s cooldowns de cooldowns_data.json", counters["cooldowns"])
+
+        # guilds (Phase 6)
+        if force or await _table_is_empty(conn, "guilds"):
+            data = _load_json(_DATA_DIR / "guilds_data.json")
+            if isinstance(data, dict) and any(k != "raids_ativas" for k in data):
+                counters["guilds"] = await _import_guilds(conn, data)
+                log.info("Importados %s guilds de guilds_data.json", counters["guilds"])
+
+        # adventures (Phase 6)
+        if force or await _table_is_empty(conn, "adventures"):
+            data = _load_json(_DATA_DIR / "aventuras_data.json")
+            if isinstance(data, dict) and data:
+                counters["adventures"] = await _import_adventures(conn, data)
+                log.info("Importadas %s aventuras de aventuras_data.json", counters["adventures"])
 
     return counters

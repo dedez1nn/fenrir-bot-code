@@ -91,10 +91,12 @@ On `on_ready`, it posts/refreshes persistent embeds in fixed channels (status, c
 - `/antispam/audit/{guild_id}` — listagem paginada de `antispam_audit` com filtro por usuário (requer admin).
 - `/antinuke/config/{guild_id}` — lê/atualiza `antinuke_config` (requer admin); PATCH envia NOTIFY.
 
-**`repositories/` package** (Phases 3–4) — thin async wrappers over asyncpg for the bot's hot path:
+**`repositories/` package** (Phases 3–6) — thin async wrappers over asyncpg for the bot's hot path:
 - `repositories/items.py` — `get_all`, `get_by_id`, `create`, `delete_one`, `delete_all`
 - `repositories/cooldowns.py` — `register`, `is_active`, `remaining_seconds`, `cleanup_expired`
 - `repositories/users.py` — `get`, `get_or_create`, `get_all`, `add_coins`, `remove_coins`, `transfer`, `update_daily`, `update_xp_nivel`, `set_titulo`, `set_premium`, `set_dobro`, `reset_xp_one`, `reset_xp_all`, `get_ranking_coins`, `get_ranking_xp`. Utilitário `row_to_cache()` converte row DB → dict em memória (TIMESTAMPTZ → float).
+- `repositories/adventures.py` — `get_all`, `get`, `upsert`, `mark_notified`, `delete`, `cleanup_expired`. Conversor `_naive_utc()` para compatibilidade com código legado.
+- `repositories/guilds.py` — `build_full_data`, `sync_full_data`, `add_banco_atomic`, `sub_banco_atomic`, `get_premium_usuario`, `update_guild_name`, `remove_xp_atomic`. Implementa modelo rebuild + sync para estado transiente de guilds.
 
 **Persistence status (per-cog):**
 
@@ -107,15 +109,17 @@ On `on_ready`, it posts/refreshes persistent embeds in fixed channels (status, c
 | `cogs/economia/fenrir_coins.py` | ✅ Postgres via `repositories/users` (with JSON fallback) |
 | `cogs/progressao/xp.py` | ✅ Postgres via `repositories/users` (with JSON fallback) |
 | `cogs/economia/pix.py` | ✅ Postgres via `repositories/users` (with JSON fallback) |
-| Guilds, adventures | Still JSON (Phase 6) |
+| `cogs/progressao/aventurar.py` | ✅ Postgres via `repositories/adventures` (with JSON fallback) |
+| `cogs/progressao/guild.py` | ✅ Postgres via `repositories/guilds` (with JSON fallback) |
+| `cogs/progressao/guild_2.py` | ✅ Postgres via `repositories/guilds` (with JSON fallback) |
 
 **Legacy JSON files in `data/`:**
 - `data/user_data.json` — **fallback only** when `bot.db is None` (primary storage is now `users` table)
 - `data/loja_data.json` — fallback only when `bot.db is None`
 - `data/cooldowns_data.json` — fallback only when `bot.db is None`
 - `data/antispam.json` — fallback only when `bot.db is None`
-- `data/guilds_data.json` — **still primary**, guild membership and stats (Phase 6 target)
-- `data/aventuras_data.json` — **still primary**, in-progress adventures per user (Phase 6 target)
+- `data/guilds_data.json` — **fallback only** (primary storage is now `guilds` + `guild_members` + `guild_invites` + `guild_alliances` + `guild_raids`)
+- `data/aventuras_data.json` — **fallback only** (primary storage is now `adventures` table)
 
 When you add new state, write directly to Postgres — do NOT add JSON files.
 
@@ -131,7 +135,7 @@ When you add new state, write directly to Postgres — do NOT add JSON files.
 
 **Level-up role system** (`xp.py:cargos_por_nivel`): Roles are assigned at levels 2, 5, 10, 20, 30, 40, 50. The map is now loaded from `bot.config["levelup_role_map"]` (JSONB, string keys: `{"2": role_id, ...}`) with hardcoded defaults as fallback. The `atualizar_cargos` method adds eligible roles and removes ones below the current level. Known bug — see `FIX_BUGS.md`.
 
-**DB-mode cogs and `cog_load`:** `FenrirCoins`, `XPCog`, and `PixCog` implement `async def cog_load(self)` which sets `self.use_db = self.bot.db is not None`, populates `self.user_data` from the `users` table, and reads runtime parameters from `bot.config`. All mutation methods check `self.use_db` and call `repositories/users.py` functions in DB mode; `salvar_dados()` is a no-op in DB mode. Tests that instantiate these cogs must set `bot.db = None` so `cog_load` falls back to JSON mode.
+**DB-mode cogs and `cog_load`:** `FenrirCoins`, `XPCog`, `PixCog`, `AventuraCog`, and guild cogs implement `async def cog_load(self)` which sets `self.use_db = self.bot.db is not None`, populates caches from the appropriate tables, and reads runtime parameters from `bot.config`. All mutation methods check `self.use_db` and call `repositories/*` functions in DB mode; `salvar_dados()` is a no-op in DB mode. Tests that instantiate these cogs must set `bot.db = None` so `cog_load` falls back to JSON mode.
 
 **Premium activation flows** (`cogs/economia/pix.py`): There are two independent paths — do **not** mix them:
 1. **Manual** (`confirmar_pagamento` button): bot-side only. Calls `atualizar_premium_usuario` (DB/JSON) → `adicionar_coins_manual` (routes through `FenrirCoins.adicionar_coins_sem_multiplo`) → `adicionar_xp_manual` (routes through `XPCog.adicionar_xp_sem_multiplo`) → adds Discord role directly. No NOTIFY sent.
@@ -143,7 +147,7 @@ When you add new state, write directly to Postgres — do NOT add JSON files.
 
 ## Migration plan
 
-A full migration plan with the status of every phase lives in `MIGRATION.md`. Phases 0–5 are done; Phase 6 (guilds + aventuras) is next.
+A full migration plan with the status of every phase lives in `MIGRATION.md`. Phases 0–6 are complete.
 
 Key invariants for any new code:
 - **Bot talks directly to Postgres via `asyncpg`** — no HTTP intermediary between bot and database.
@@ -151,6 +155,34 @@ Key invariants for any new code:
 - **`antispam_config` and `antinuke_config` are JSONB** — change `AntispamConfig`/`AntinukeConfig` dataclasses freely; `from_dict()` is tolerant to missing/extra fields.
 - **`FenrirCoins` + `XPCog` race condition is fixed** — mutations use targeted `UPDATE … SET field = $2` (not write-entire-row), so concurrent saves from the two cogs never overwrite each other.
 - **Resilience contract**: if `bot.db is None`, the bot logs a warning and continues in JSON mode. Code paths that touch the DB must check `self.use_db` (cogs) or `if self.bot.db is not None` (elsewhere).
-- **New state goes to Postgres** — do NOT add JSON files. If a cog needs a new persistent field, add a column to the appropriate table and expose it through `repositories/`.
+- **New state goes to Postgres** — do NOT add JSON files. If a cog needs a new persistent field, add a column to the appropriate table and expose it through `repositories/`. Guild and adventure data are now Postgres-backed; all cogs use dual-mode DB/JSON with `self.use_db` and `cog_load()` pattern.
 - **Cache invalidation is cross-process via NOTIFY** — when the API updates any shared state (premium, server_config, antispam/antinuke config), it must call `pg_notify('fenrir_cache', '<kind>:<id>')`. The bot's listener handles the rest. Never rely on TTL expiry alone for admin operations.
 - **API auth**: new endpoints that mutate config must use `Depends(require_admin)` from `api/routers/auth.py`. The dependency is a no-op in dev mode (JWT_SECRET at default value); set a real secret in production via `JWT_SECRET` env var.
+
+## Phase 6 details: Guilds + Adventures
+
+**Guild data model** (`repositories/guilds.py`):
+- Guilds use a **rebuild + sync** pattern: `build_full_data()` reconstructs the full `guilds_data.json` shape from normalized DB tables; `sync_full_data()` upserts all records in a single transaction.
+- `guilds` table stores core state (name, leader, bank, level, XP, motto, emoji, timestamps).
+- `guild_members` stores membership with role (`Líder`/`Admin`/`Membro`) and join time.
+- `guild_invites` stores pending invites with creator and expiration (UNIX timestamp in seconds).
+- `guild_alliances` stores bilateral alliances (both A→B and B→A stored for O(1) lookup).
+- `guild_raids` stores active raids as transient JSONB state—allows raid shape to evolve without schema migrations.
+- Atomic operations: `add_banco_atomic()`, `sub_banco_atomic()` (with balance guard), `remove_xp_atomic()` prevent overflow/underflow.
+
+**Adventure data model** (`repositories/adventures.py`):
+- `adventures` table has one row per active user. Field `inicio` is TIMESTAMPTZ (UTC); field `situacao` is JSONB (adventure type/name/description/image).
+- `_naive_utc()` converter returns `datetime` objects without tzinfo (naive UTC) for compatibility with legacy code in `aventurar.py`.
+- Unique constraint on `user_id` ensures at most one adventure per player.
+- `cleanup_expired()` removes completed adventures older than N hours (default 24).
+
+**Cog patterns** (`cogs/progressao/aventurar.py`, `guild.py`, `guild_2.py`):
+- All three cogs implement `async def cog_load(self)` → sets `self.use_db` and initializes memory caches from the DB.
+- In DB mode, `salvar_dados()` becomes a background async task (`asyncio.create_task()`) that calls `sync_full_data()` or appropriate `upsert()` functions—never blocks the bot.
+- Reads are always async: `obter_aventura_usuario()`, etc. check `self.use_db` and call `repositories/*` functions; fallback to JSON load on error.
+- Time calculations (`obter_tempo_restante()`, `aventura_expirada()`, etc.) work on in-memory `datetime` objects; no DB round-trip needed.
+
+**JSON fallback guarantee:**
+- If `bot.db is None` at startup, `cog_load()` skips DB init and cogs operate entirely from JSON files.
+- Imports in `db/migrate.py` (`_import_guilds()`, `_import_adventures()`) run on startup if tables are empty, populating the DB from `data/*.json`.
+- Error handling in import is granular (per-record); one malformed invite doesn't prevent guild import.

@@ -1,15 +1,23 @@
+import asyncio
+import logging
+
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import json
 import os
 import random
-import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+import repositories.adventures as adventures_repo
+
+log = logging.getLogger(__name__)
+
 
 class AventuraCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.use_db: bool = False
         self.ARQUIVO_AVENTURAS = "data/aventuras_data.json"
         
         self.COOLDOWN_HORAS = 0.001
@@ -54,7 +62,14 @@ class AventuraCog(commands.Cog):
         self.verificar_aventuras_expiradas.start()
         self.verificar_aventuras_prontas.start()
 
-    def carregar_dados(self):
+    async def cog_load(self) -> None:
+        self.use_db = self.bot.db is not None
+        if self.use_db:
+            log.info("AventuraCog: modo DB ativo")
+
+    # ─── JSON helpers (fallback) ──────────────────────────────────────────────
+
+    def _carregar_dados_json(self) -> dict:
         try:
             if os.path.exists(self.ARQUIVO_AVENTURAS):
                 with open(self.ARQUIVO_AVENTURAS, "r", encoding="utf-8") as f:
@@ -68,36 +83,66 @@ class AventuraCog(commands.Cog):
             print(f"❌ Erro ao carregar dados das aventuras: {e}")
             return {}
 
-    def salvar_dados(self, dados):
+    def _salvar_dados_json(self, dados: dict) -> None:
         try:
             data_para_salvar = {}
             for user_id, aventura_data in dados.items():
                 data_para_salvar[user_id] = aventura_data.copy()
-                if "inicio" in data_para_salvar[user_id]:
+                if "inicio" in data_para_salvar[user_id] and isinstance(
+                    data_para_salvar[user_id]["inicio"], datetime
+                ):
                     data_para_salvar[user_id]["inicio"] = data_para_salvar[user_id]["inicio"].isoformat()
-            
             with open(self.ARQUIVO_AVENTURAS, "w", encoding="utf-8") as f:
                 json.dump(data_para_salvar, f, indent=4, ensure_ascii=False)
         except Exception as e:
             print(f"❌ Erro ao salvar dados das aventuras: {e}")
 
-    def obter_aventura_usuario(self, usuario_id):
-        dados = self.carregar_dados()
+    # ─── Data access (dual-mode) ──────────────────────────────────────────────
+
+    async def obter_aventura_usuario(self, usuario_id: int):
+        if self.use_db:
+            try:
+                return await adventures_repo.get(self.bot.db, usuario_id)
+            except Exception as exc:
+                log.error("Erro ao obter aventura do usuário %s: %s", usuario_id, exc)
+                return None
+        dados = self._carregar_dados_json()
         return dados.get(str(usuario_id))
 
-    def remover_aventura_usuario(self, usuario_id):
-        dados = self.carregar_dados()
+    async def remover_aventura_usuario(self, usuario_id: int) -> bool:
+        if self.use_db:
+            try:
+                return await adventures_repo.delete(self.bot.db, usuario_id)
+            except Exception as exc:
+                log.error("Erro ao remover aventura do usuário %s: %s", usuario_id, exc)
+                return False
+        dados = self._carregar_dados_json()
         usuario_id_str = str(usuario_id)
         if usuario_id_str in dados:
             del dados[usuario_id_str]
-            self.salvar_dados(dados)
+            self._salvar_dados_json(dados)
             return True
         return False
 
-    def adicionar_aventura_usuario(self, usuario_id, aventura_data):
-        dados = self.carregar_dados()
+    async def adicionar_aventura_usuario(self, usuario_id: int, aventura_data: dict) -> None:
+        if self.use_db:
+            try:
+                inicio = aventura_data["inicio"]
+                await adventures_repo.upsert(
+                    self.bot.db,
+                    usuario_id,
+                    inicio,
+                    aventura_data.get("canal_id"),
+                    aventura_data.get("situacao", {}),
+                    bool(aventura_data.get("notificado", False)),
+                )
+                return
+            except Exception as exc:
+                log.error("Erro ao salvar aventura do usuário %s: %s", usuario_id, exc)
+                return
+        dados = self._carregar_dados_json()
         dados[str(usuario_id)] = aventura_data
-        self.salvar_dados(dados)
+        self._salvar_dados_json(dados)
 
     def obter_tempo_restante(self, inicio_aventura):
         fim_aventura = inicio_aventura + timedelta(hours=self.COOLDOWN_HORAS)
@@ -226,7 +271,7 @@ class AventuraCog(commands.Cog):
                 return False
             
             # Verificar se a aventura ainda existe e está pronta
-            aventura_data = self.aventura_cog.obter_aventura_usuario(self.usuario_id)
+            aventura_data = await self.aventura_cog.obter_aventura_usuario(self.usuario_id)
             if not aventura_data:
                 await interaction.response.send_message("❌ Esta aventura já foi concluída ou expirou!", ephemeral=True)
                 return False
@@ -240,7 +285,7 @@ class AventuraCog(commands.Cog):
 
         @discord.ui.button(label="⚔️ Enfrentá-los", style=discord.ButtonStyle.green, emoji="⚔️", custom_id="aventura_enfrentar")
         async def enfrentar(self, interaction: discord.Interaction, button: discord.ui.Button):
-            self.aventura_cog.remover_aventura_usuario(self.usuario_id)
+            await self.aventura_cog.remover_aventura_usuario(self.usuario_id)
 
             coins_cog = self.aventura_cog.bot.get_cog("FenrirCoins")
             
@@ -335,7 +380,7 @@ class AventuraCog(commands.Cog):
         @discord.ui.button(label="👣 Avançar Furtivamente", style=discord.ButtonStyle.blurple, emoji="👣", custom_id="aventura_furtividade")
         async def furtividade(self, interaction: discord.Interaction, button: discord.ui.Button):
 
-            self.aventura_cog.remover_aventura_usuario(self.usuario_id)
+            await self.aventura_cog.remover_aventura_usuario(self.usuario_id)
 
             coins_cog = self.aventura_cog.bot.get_cog("FenrirCoins")
 
@@ -412,7 +457,7 @@ class AventuraCog(commands.Cog):
                 await interaction.response.send_message("❌ Esta aventura não é sua!", ephemeral=True)
                 return False
             
-            aventura_data = self.aventura_cog.obter_aventura_usuario(self.usuario_id)
+            aventura_data = await self.aventura_cog.obter_aventura_usuario(self.usuario_id)
             if not aventura_data:
                 await interaction.response.send_message("❌ Esta aventura já foi concluída ou expirou!", ephemeral=True)
                 return False
@@ -426,7 +471,7 @@ class AventuraCog(commands.Cog):
 
         @discord.ui.button(label="💰 Coletar Tesouro", style=discord.ButtonStyle.green, emoji="💰", custom_id="tesouro_coletar")
         async def coletar_tesouro(self, interaction: discord.Interaction, button: discord.ui.Button):
-            self.aventura_cog.remover_aventura_usuario(self.usuario_id)
+            await self.aventura_cog.remover_aventura_usuario(self.usuario_id)
 
             coins_cog = self.aventura_cog.bot.get_cog("FenrirCoins")
             ganho = random.randint(*self.aventura_cog.RECOMPENSA_TESOURO)
@@ -472,22 +517,26 @@ class AventuraCog(commands.Cog):
     @tasks.loop(minutes=1)
     async def verificar_aventuras_prontas(self):
         try:
-            dados = self.carregar_dados()
+            if self.use_db:
+                dados = await adventures_repo.get_all(self.bot.db)
+            else:
+                dados = self._carregar_dados_json()
+
             aventuras_notificadas = []
-            
+
             for user_id_str, aventura_data in dados.items():
                 if "inicio" in aventura_data and "notificado" not in aventura_data:
                     inicio_aventura = aventura_data["inicio"]
-                    
+
                     if self.aventura_pronta(inicio_aventura):
                         user_id = int(user_id_str)
                         user = self.bot.get_user(user_id)
-                        
+
                         if user:
                             situacao = aventura_data["situacao"]
                             canal_id = aventura_data.get("canal_id")
                             canal_original = self.bot.get_channel(canal_id) if canal_id else None
-                            
+
                             try:
                                 embed_dm = discord.Embed(
                                     title="🎯 Sua Aventura Está Pronta!",
@@ -499,13 +548,10 @@ class AventuraCog(commands.Cog):
                                     ),
                                     color=discord.Color.gold()
                                 )
-                                
                                 if situacao.get("imagem"):
                                     embed_dm.set_image(url=situacao["imagem"])
-                                
                                 await user.send(embed=embed_dm)
                                 print(f"✅ Notificação DM enviada para {user.display_name}")
-                                
                             except discord.Forbidden:
                                 if canal_original:
                                     try:
@@ -519,52 +565,64 @@ class AventuraCog(commands.Cog):
                                             ),
                                             color=discord.Color.gold()
                                         )
-                                        
                                         if situacao.get("imagem"):
                                             embed_canal.set_image(url=situacao["imagem"])
-                                        
                                         await canal_original.send(embed=embed_canal)
                                         print(f"✅ Notificação no canal enviada para {user.display_name}")
-                                        
                                     except Exception as e:
                                         print(f"❌ Erro ao enviar notificação no canal para {user_id}: {e}")
                                 else:
                                     print(f"❌ Não foi possível notificar {user.display_name} (sem DM e sem canal)")
-                            
+
                             aventura_data["notificado"] = True
-                            aventuras_notificadas.append(user_id_str)
-            
+                            aventuras_notificadas.append((user_id_str, aventura_data))
+
             if aventuras_notificadas:
-                self.salvar_dados(dados)
+                if self.use_db:
+                    for uid_str, adata in aventuras_notificadas:
+                        try:
+                            await adventures_repo.mark_notified(self.bot.db, int(uid_str))
+                        except Exception as exc:
+                            log.error("Erro ao marcar aventura notificada %s: %s", uid_str, exc)
+                else:
+                    novo_dados = self._carregar_dados_json()
+                    for uid_str, adata in aventuras_notificadas:
+                        if uid_str in novo_dados:
+                            novo_dados[uid_str]["notificado"] = True
+                    self._salvar_dados_json(novo_dados)
                 print(f"🔔 Notificadas {len(aventuras_notificadas)} aventuras prontas")
-                
+
         except Exception as e:
             print(f"❌ Erro na verificação de aventuras prontas: {e}")
 
     @tasks.loop(minutes=30)
     async def verificar_aventuras_expiradas(self):
         try:
-            dados = self.carregar_dados()
+            if self.use_db:
+                deleted = await adventures_repo.cleanup_expired(self.bot.db, max_hours=24.0)
+                if deleted:
+                    print(f"🔄 Removidas {deleted} aventuras expiradas do DB")
+                return
+
+            dados = self._carregar_dados_json()
             aventuras_remover = []
             agora = datetime.utcnow()
-            
+
             for user_id, aventura_data in dados.items():
                 if "inicio" in aventura_data:
                     inicio_aventura = aventura_data["inicio"]
                     tempo_decorrido = agora - inicio_aventura
-                    
-                    if (self.aventura_pronta(inicio_aventura) and 
-                        tempo_decorrido.total_seconds() > 24 * 3600):
+                    if self.aventura_pronta(inicio_aventura) and tempo_decorrido.total_seconds() > 24 * 3600:
                         aventuras_remover.append(user_id)
-            
+
             for user_id in aventuras_remover:
                 del dados[user_id]
                 print(f"🗑️ Removida aventura expirada do usuário {user_id}")
-            
+
             if aventuras_remover:
-                self.salvar_dados(dados)
+                self._salvar_dados_json(dados)
                 print(f"🔄 Removidas {len(aventuras_remover)} aventuras expiradas")
-                
+
         except Exception as e:
             print(f"❌ Erro na verificação de aventuras expiradas: {e}")
 
@@ -590,7 +648,7 @@ class AventuraCog(commands.Cog):
         try:
             usuario_id = str(interaction.user.id)
             
-            aventura_existente = self.obter_aventura_usuario(interaction.user.id)
+            aventura_existente = await self.obter_aventura_usuario(interaction.user.id)
             
             if aventura_existente:
                 inicio_aventura = aventura_existente["inicio"]
@@ -651,7 +709,7 @@ class AventuraCog(commands.Cog):
                 "situacao": situacao
             }
             
-            self.adicionar_aventura_usuario(interaction.user.id, nova_aventura)
+            await self.adicionar_aventura_usuario(interaction.user.id, nova_aventura)
 
             duracao_total_segundos = self.COOLDOWN_HORAS * 3600
             duracao_str = self.formatar_tempo(duracao_total_segundos)
@@ -686,7 +744,7 @@ class AventuraCog(commands.Cog):
             return
         
         try:
-            aventura_data = self.obter_aventura_usuario(interaction.user.id)
+            aventura_data = await self.obter_aventura_usuario(interaction.user.id)
             
             if not aventura_data:
                 embed = discord.Embed(

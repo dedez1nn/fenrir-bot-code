@@ -1,12 +1,19 @@
+import asyncio
+import logging
+
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 import json
 import os
 import time
-import asyncio
 import random
 from typing import Optional
+
+import repositories.guilds as guilds_repo
+import repositories.users as users_repo
+
+log = logging.getLogger(__name__)
 
 def carregar_user_data():
     try:
@@ -911,11 +918,27 @@ class ConfirmacaoDefensorAliancaView(discord.ui.View):
 class GuildAllianceRaidSystem(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.use_db: bool = False
         self.ARQUIVO_GUILDS = "data/guilds_data.json"
         self.CANAL_RAIDS_ID = 1430607187193102456
         self.verificar_raids.start()
 
-    def carregar_dados(self):
+    async def cog_load(self) -> None:
+        self.use_db = self.bot.db is not None
+        if self.use_db and not hasattr(self.bot, "_guilds_cache"):
+            try:
+                self.bot._guilds_cache = await guilds_repo.build_full_data(self.bot.db)
+                n = len([k for k in self.bot._guilds_cache if k != "raids_ativas"])
+                log.info("GuildAllianceRaidSystem: %d guilds carregadas do DB", n)
+            except Exception as exc:
+                log.error("GuildAllianceRaidSystem: erro ao carregar guilds do DB: %s", exc)
+                self.bot._guilds_cache = {"raids_ativas": {}}
+
+    def carregar_dados(self) -> dict:
+        if self.use_db:
+            cache = getattr(self.bot, "_guilds_cache", None)
+            return cache if cache is not None else {"raids_ativas": {}}
+
         try:
             if os.path.exists(self.ARQUIVO_GUILDS):
                 with open(self.ARQUIVO_GUILDS, "r", encoding="utf-8") as f:
@@ -924,7 +947,13 @@ class GuildAllianceRaidSystem(commands.Cog):
             print(f"❌ Erro ao carregar dados: {e}")
         return {"raids_ativas": {}}
 
-    def salvar_dados(self, dados):
+    def salvar_dados(self, dados: dict) -> bool:
+        if self.use_db:
+            self.bot._guilds_cache = dados
+            if self.bot.db is not None:
+                asyncio.ensure_future(self._flush_to_db(dados))
+            return True
+
         try:
             with open(self.ARQUIVO_GUILDS, "w", encoding="utf-8") as f:
                 json.dump(dados, f, indent=4)
@@ -932,6 +961,12 @@ class GuildAllianceRaidSystem(commands.Cog):
         except Exception as e:
             print(f"❌ Erro ao salvar dados: {e}")
             return False
+
+    async def _flush_to_db(self, dados: dict) -> None:
+        try:
+            await guilds_repo.sync_full_data(self.bot.db, dados)
+        except Exception as exc:
+            log.error("GuildAllianceRaidSystem: falha ao sincronizar guilds com DB: %s", exc)
 
     def obter_guild_por_membro(self, user_id: int) -> Optional[str]:
         dados = self.carregar_dados()
@@ -965,24 +1000,49 @@ class GuildAllianceRaidSystem(commands.Cog):
                 return False
 
             if tipo_doacao == 'xp':
-                xp_usuario = obter_xp_usuario(interaction.user.id)
-                if xp_usuario < valor:
-                    await interaction.followup.send("❌ Você não tem XP suficiente para doar!", ephemeral=True)
-                    return False
-                
-                if not remover_xp_usuario(interaction.user.id, valor, f"Doação para raid {raid_id}"):
-                    await interaction.followup.send("❌ Erro ao processar doação de XP!", ephemeral=True)
-                    return False
-                    
+                if self.use_db:
+                    sucesso = await guilds_repo.remove_xp_atomic(
+                        self.bot.db, interaction.user.id, valor
+                    )
+                    if not sucesso:
+                        await interaction.followup.send("❌ Você não tem XP suficiente para doar!", ephemeral=True)
+                        return False
+                    # Atualiza cache do XPCog se disponível
+                    xp_cog = self.bot.get_cog("XPCog")
+                    if xp_cog and str(interaction.user.id) in xp_cog.user_data:
+                        xp_cog.user_data[str(interaction.user.id)]["xp"] = max(
+                            0, xp_cog.user_data[str(interaction.user.id)].get("xp", 0) - valor
+                        )
+                else:
+                    xp_usuario = obter_xp_usuario(interaction.user.id)
+                    if xp_usuario < valor:
+                        await interaction.followup.send("❌ Você não tem XP suficiente para doar!", ephemeral=True)
+                        return False
+                    if not remover_xp_usuario(interaction.user.id, valor, f"Doação para raid {raid_id}"):
+                        await interaction.followup.send("❌ Erro ao processar doação de XP!", ephemeral=True)
+                        return False
             else:
-                coins_usuario = obter_coins_usuario(interaction.user.id)
-                if coins_usuario < valor:
-                    await interaction.followup.send("❌ Você não tem Coins suficiente para doar!", ephemeral=True)
-                    return False
-                
-                if not remover_coins_usuario(interaction.user.id, valor, f"Doação para raid {raid_id}"):
-                    await interaction.followup.send("❌ Erro ao processar doação de Coins!", ephemeral=True)
-                    return False
+                if self.use_db:
+                    # Verifica saldo antes (remove_coins usa GREATEST e não rejeita)
+                    row_check = await users_repo.get(self.bot.db, interaction.user.id)
+                    if not row_check or row_check.get("coins", 0) < valor:
+                        await interaction.followup.send("❌ Você não tem Coins suficientes para doar!", ephemeral=True)
+                        return False
+                    await users_repo.remove_coins(self.bot.db, interaction.user.id, valor)
+                    # Atualiza cache do FenrirCoins se disponível
+                    coins_cog = self.bot.get_cog("FenrirCoins")
+                    if coins_cog and str(interaction.user.id) in coins_cog.user_data:
+                        coins_cog.user_data[str(interaction.user.id)]["coins"] = max(
+                            0, coins_cog.user_data[str(interaction.user.id)].get("coins", 0) - valor
+                        )
+                else:
+                    coins_usuario = obter_coins_usuario(interaction.user.id)
+                    if coins_usuario < valor:
+                        await interaction.followup.send("❌ Você não tem Coins suficiente para doar!", ephemeral=True)
+                        return False
+                    if not remover_coins_usuario(interaction.user.id, valor, f"Doação para raid {raid_id}"):
+                        await interaction.followup.send("❌ Erro ao processar doação de Coins!", ephemeral=True)
+                        return False
 
             if "doacoes" not in raid_data[guild_tipo]:
                 raid_data[guild_tipo]["doacoes"] = {}

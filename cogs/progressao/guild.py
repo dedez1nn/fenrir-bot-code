@@ -1,3 +1,6 @@
+import asyncio
+import logging
+
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -6,9 +9,15 @@ import os
 import time
 from typing import Optional
 
+import repositories.guilds as guilds_repo
+
+log = logging.getLogger(__name__)
+
+
 class GuildSystem(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.use_db: bool = False
         self.ARQUIVO_GUILDS = "data/guilds_data.json"
         
         self.xp_base = 500000
@@ -65,6 +74,17 @@ class GuildSystem(commands.Cog):
             }
         }
 
+    async def cog_load(self) -> None:
+        self.use_db = self.bot.db is not None
+        if self.use_db and not hasattr(self.bot, "_guilds_cache"):
+            try:
+                self.bot._guilds_cache = await guilds_repo.build_full_data(self.bot.db)
+                n = len([k for k in self.bot._guilds_cache if k != "raids_ativas"])
+                log.info("GuildSystem: %d guilds carregadas do DB", n)
+            except Exception as exc:
+                log.error("GuildSystem: erro ao carregar guilds do DB: %s", exc)
+                self.bot._guilds_cache = {"raids_ativas": {}}
+
     def calcular_xp_necessario(self, nivel: int) -> int:
         return int(self.xp_base * (2 ** (nivel - 1)))
 
@@ -91,51 +111,44 @@ class GuildSystem(commands.Cog):
         
         return False, guild_data, 0
 
-    def carregar_dados(self):
+    def carregar_dados(self) -> dict:
+        if self.use_db:
+            cache = getattr(self.bot, "_guilds_cache", None)
+            return cache if cache is not None else {"raids_ativas": {}}
+
         try:
             if os.path.exists(self.ARQUIVO_GUILDS):
                 with open(self.ARQUIVO_GUILDS, "r", encoding="utf-8") as f:
                     dados = json.load(f)
-                    
+
                     if "raids_ativas" not in dados:
                         dados["raids_ativas"] = {}
-                    
+
                     for guild_id, guild_data in dados.items():
                         if guild_id == "raids_ativas":
                             continue
-                            
-                        if "membros" not in guild_data:
-                            guild_data["membros"] = {}
-                        if "banco" not in guild_data:
-                            guild_data["banco"] = 0
-                        if "nivel" not in guild_data:
-                            guild_data["nivel"] = 1
-                        if "xp" not in guild_data:
-                            guild_data["xp"] = 0
-                        if "motto" not in guild_data:
-                            guild_data["motto"] = ""
-                        if "emoji" not in guild_data:
-                            guild_data["emoji"] = ""
-                        if "convites" not in guild_data:
-                            guild_data["convites"] = {}
-                        if "cooldowns" not in guild_data:
-                            guild_data["cooldowns"] = {}
-                        if "aliancas" not in guild_data:
-                            guild_data["aliancas"] = []
-                        if "data_criacao" not in guild_data:
-                            guild_data["data_criacao"] = time.time()
-                        if "ultima_raid" not in guild_data:
-                            guild_data["ultima_raid"] = 0
-                        if "data_alianca" not in guild_data:
-                            guild_data["data_alianca"] = 0
-                    
+                        for field, default in [
+                            ("membros", {}), ("banco", 0), ("nivel", 1), ("xp", 0),
+                            ("motto", ""), ("emoji", ""), ("convites", {}), ("cooldowns", {}),
+                            ("aliancas", []), ("data_criacao", time.time()),
+                            ("ultima_raid", 0), ("data_alianca", 0),
+                        ]:
+                            if field not in guild_data:
+                                guild_data[field] = default
+
                     return dados
         except Exception as e:
             print(f"❌ Erro ao carregar dados: {e}")
-        
+
         return {"raids_ativas": {}}
 
-    def salvar_dados(self, dados):
+    def salvar_dados(self, dados: dict) -> bool:
+        if self.use_db:
+            self.bot._guilds_cache = dados
+            if self.bot.db is not None:
+                asyncio.ensure_future(self._flush_to_db(dados))
+            return True
+
         try:
             with open(self.ARQUIVO_GUILDS, "w", encoding="utf-8") as f:
                 json.dump(dados, f, indent=4)
@@ -143,6 +156,12 @@ class GuildSystem(commands.Cog):
         except Exception as e:
             print(f"❌ Erro ao salvar dados: {e}")
             return False
+
+    async def _flush_to_db(self, dados: dict) -> None:
+        try:
+            await guilds_repo.sync_full_data(self.bot.db, dados)
+        except Exception as exc:
+            log.error("GuildSystem: falha ao sincronizar guilds com DB: %s", exc)
 
     def obter_guild_por_membro(self, user_id: int) -> Optional[str]:
         dados = self.carregar_dados()
@@ -155,7 +174,20 @@ class GuildSystem(commands.Cog):
                 return guild_id
         return None
 
-    def obter_plano_usuario(self, user_id: int) -> str:
+    async def obter_plano_usuario(self, user_id: int) -> str:
+        if self.use_db:
+            # Prefer in-memory cache from FenrirCoins cog
+            coins_cog = self.bot.get_cog("FenrirCoins")
+            if coins_cog and str(user_id) in coins_cog.user_data:
+                plano = coins_cog.user_data[str(user_id)].get("premium") or "gratuito"
+                return plano if plano in self.planos_config else "gratuito"
+            try:
+                plano = await guilds_repo.get_premium_usuario(self.bot.db, user_id)
+                return (plano or "gratuito") if (plano or "gratuito") in self.planos_config else "gratuito"
+            except Exception as exc:
+                log.error("Erro ao obter plano do usuário %s: %s", user_id, exc)
+                return "gratuito"
+
         try:
             user_data_file = "data/user_data.json"
             if os.path.exists(user_data_file):
@@ -167,14 +199,14 @@ class GuildSystem(commands.Cog):
             print(f"❌ Erro ao obter plano: {e}")
         return "gratuito"
 
-    def calcular_multiplicador_guild(self, guild_id: str) -> float:
+    async def calcular_multiplicador_guild(self, guild_id: str) -> float:
         try:
             dados = self.carregar_dados()
             if guild_id not in dados or guild_id == "raids_ativas":
                 return 1.0
-                
+
             guild_data = dados[guild_id]
-            plano_lider = self.obter_plano_usuario(int(guild_data["lider"]))
+            plano_lider = await self.obter_plano_usuario(int(guild_data["lider"]))
             config_plano = self.planos_config.get(plano_lider, self.planos_config["gratuito"])
             
             membros_ativos = len([m for m in guild_data["membros"].values() if m.get("ativo", True)])
@@ -205,24 +237,35 @@ class GuildSystem(commands.Cog):
             print(f"❌ Erro ao calcular multiplicador: {e}")
             return 1.0
 
-    def atualizar_guild_user_data(self, user_id: int, guild_id: str = None):
+    async def atualizar_guild_user_data(self, user_id: int, guild_id: str = None):
+        if self.use_db:
+            try:
+                await guilds_repo.update_guild_name(self.bot.db, user_id, guild_id)
+                # Atualiza cache em memória do FenrirCoins se disponível
+                coins_cog = self.bot.get_cog("FenrirCoins")
+                if coins_cog and str(user_id) in coins_cog.user_data:
+                    coins_cog.user_data[str(user_id)]["guild"] = guild_id
+            except Exception as exc:
+                log.error("Erro ao atualizar guild_name do usuário %s: %s", user_id, exc)
+            return
+
         try:
             user_data_file = "data/user_data.json"
             dados = {}
-            
+
             if os.path.exists(user_data_file):
                 with open(user_data_file, "r", encoding="utf-8") as f:
                     dados = json.load(f)
-            
+
             user_id_str = str(user_id)
             if user_id_str not in dados:
                 dados[user_id_str] = {}
-            
+
             dados[user_id_str]["guild"] = guild_id
-            
+
             with open(user_data_file, "w", encoding="utf-8") as f:
                 json.dump(dados, f, indent=4)
-                
+
         except Exception as e:
             print(f"❌ Erro ao atualizar user_data: {e}")
 
@@ -432,7 +475,7 @@ class GuildSystem(commands.Cog):
                 inline=False
             )
         
-            multiplicador = self.calcular_multiplicador_guild(guild_id)
+            multiplicador = await self.calcular_multiplicador_guild(guild_id)
             embed.add_field(
                 name="⚡ Multiplicador Atual",
                 value=f"**{multiplicador}x** (baseado no plano + bônus de nível)",
@@ -496,7 +539,7 @@ class GuildSystem(commands.Cog):
                     await interaction.followup.send("❌ Já existe uma guild com este nome!")
                     return
             
-            plano = self.obter_plano_usuario(interaction.user.id)
+            plano = await self.obter_plano_usuario(interaction.user.id)
             config_plano = self.planos_config.get(plano, self.planos_config["gratuito"])
             
             guild_id = f"guild_{int(time.time())}"
@@ -524,7 +567,7 @@ class GuildSystem(commands.Cog):
             }
             
             if self.salvar_dados(dados):
-                self.atualizar_guild_user_data(interaction.user.id, guild_id)
+                await self.atualizar_guild_user_data(interaction.user.id, guild_id)
                 
                 embed = discord.Embed(
                     title="🏰 Guild Criada!",
@@ -569,8 +612,8 @@ class GuildSystem(commands.Cog):
                 await interaction.followup.send("❌ Guild não encontrada!")
                 return
             
-            plano_lider = self.obter_plano_usuario(int(guild_data["lider"]))
-            multiplicador = self.calcular_multiplicador_guild(guild_id)
+            plano_lider = await self.obter_plano_usuario(int(guild_data["lider"]))
+            multiplicador = await self.calcular_multiplicador_guild(guild_id)
             
             embed = discord.Embed(
                 title=f"🏰 {guild_data['nome']}",
@@ -689,7 +732,7 @@ class GuildSystem(commands.Cog):
                 dados[guild_id] = guild_data
                 
                 if self.salvar_dados(dados):
-                    self.atualizar_guild_user_data(interaction.user.id, None)
+                    await self.atualizar_guild_user_data(interaction.user.id, None)
                     await interaction.followup.send(f"✅ Você saiu da guild **{guild_data['nome']}**")
                 else:
                     await interaction.followup.send("❌ Erro ao salvar dados!")
@@ -724,8 +767,8 @@ class GuildSystem(commands.Cog):
             )
             
             for i, (guild_id, guild_data) in enumerate(guilds_ordenadas, 1):
-                plano_lider = self.obter_plano_usuario(int(guild_data["lider"]))
-                multiplicador = self.calcular_multiplicador_guild(guild_id)
+                plano_lider = await self.obter_plano_usuario(int(guild_data["lider"]))
+                multiplicador = await self.calcular_multiplicador_guild(guild_id)
                 
                 embed.add_field(
                     name=f"{i}. {guild_data['nome']}",
@@ -874,7 +917,7 @@ class GuildSystem(commands.Cog):
                 dados[guild_id] = guild_data
                 
                 if self.salvar_dados(dados):
-                    self.atualizar_guild_user_data(interaction.user.id, guild_id)
+                    await self.atualizar_guild_user_data(interaction.user.id, guild_id)
                     
                     embed = discord.Embed(
                         title="✅ Entrou na Guild!",
@@ -928,7 +971,7 @@ class GuildSystem(commands.Cog):
                 color=discord.Color.green()
             )
             
-            multiplicador = self.calcular_multiplicador_guild(guild_id)
+            multiplicador = await self.calcular_multiplicador_guild(guild_id)
             embed.add_field(name="⚡ Multiplicador Ativo", value=f"{multiplicador}x", inline=True)
             
             await interaction.followup.send(embed=embed)
@@ -1188,7 +1231,7 @@ class GuildSystem(commands.Cog):
             dados[guild_id] = guild_data
             
             if self.salvar_dados(dados):
-                self.atualizar_guild_user_data(membro.id, None)
+                await self.atualizar_guild_user_data(membro.id, None)
                 await interaction.followup.send(f"✅ {membro.mention} foi expulso da guild!")
             else:
                 await interaction.followup.send("❌ Erro ao expulsar membro!")
@@ -1319,7 +1362,7 @@ class GuildSystem(commands.Cog):
             
             if self.salvar_dados(dados):
                 for user_id in guild_data["membros"]:
-                    self.atualizar_guild_user_data(int(user_id), None)
+                    await self.atualizar_guild_user_data(int(user_id), None)
                 
                 await interaction.followup.send(f"✅ Guild **{guild_data['nome']}** deletada!")
             else:

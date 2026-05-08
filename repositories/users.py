@@ -263,3 +263,18 @@ async def set_dobro(
             dobro,
             dobro_expiracao,
         )
+
+
+async def remove_xp(pool, user_id: int, amount: int) -> bool:
+    """Subtrai `amount` de XP atomicamente se o usuário tiver saldo suficiente.
+
+    Retorna True se a operação foi realizada, False se XP insuficiente.
+    Não altera o nível — usado apenas em doações de raid (guild_2.py).
+    """
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "UPDATE users SET xp = xp - $2, updated_at = NOW() WHERE user_id = $1 AND xp >= $2",
+            user_id,
+            amount,
+        )
+    return result != "UPDATE 0"

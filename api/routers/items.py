@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Response
 from pydantic import BaseModel, Field
 
 from .. import db as api_db
@@ -83,10 +83,16 @@ async def update_item(item_id: int, body: ItemUpdate) -> Dict[str, Any]:
 
 
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_item(item_id: int) -> None:
+async def delete_item(item_id: int) -> Response:
     async with api_db.acquire() as conn:
         row = await conn.fetchrow(
             "DELETE FROM items WHERE id = $1 RETURNING id", item_id
         )
+
     if row is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Item não encontrado")
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail="Item não encontrado"
+        )
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

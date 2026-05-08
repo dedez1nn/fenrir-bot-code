@@ -111,82 +111,87 @@ class TestAventuraCog:
             assert len(cog.situacoes) == 3
     
     def test_carregar_dados_arquivo_existe(self, aventura_cog, tmp_path):
-        """Teste carregar dados quando arquivo existe"""
+        """Teste carregar dados quando arquivo existe (JSON mode)"""
         aventura_cog.ARQUIVO_AVENTURAS = str(tmp_path / "test_aventuras.json")
-        
+
         dados_teste = {
             "123456": {
                 "inicio": datetime.now(timezone.utc).isoformat(),
                 "situacao": {"nome": "Teste"}
             }
         }
-        
+
         with open(aventura_cog.ARQUIVO_AVENTURAS, "w", encoding="utf-8") as f:
             json.dump(dados_teste, f)
-        
-        dados = aventura_cog.carregar_dados()
+
+        dados = aventura_cog._carregar_dados_json()
         assert "123456" in dados
-    
+
     def test_carregar_dados_arquivo_nao_existe(self, aventura_cog, tmp_path):
-        """Teste carregar dados quando arquivo não existe"""
+        """Teste carregar dados quando arquivo não existe (JSON mode)"""
         aventura_cog.ARQUIVO_AVENTURAS = str(tmp_path / "inexistente.json")
-        dados = aventura_cog.carregar_dados()
+        dados = aventura_cog._carregar_dados_json()
         assert dados == {}
-    
+
     def test_salvar_dados(self, aventura_cog, tmp_path):
-        """Teste salvar dados"""
+        """Teste salvar dados (JSON mode)"""
         aventura_cog.ARQUIVO_AVENTURAS = str(tmp_path / "test_save.json")
-        
+
         dados_teste = {
             "123456": {
                 "inicio": datetime.now(timezone.utc),
                 "situacao": {"nome": "Teste"}
             }
         }
-        
-        aventura_cog.salvar_dados(dados_teste)
+
+        aventura_cog._salvar_dados_json(dados_teste)
         assert os.path.exists(aventura_cog.ARQUIVO_AVENTURAS)
-        
+
         with open(aventura_cog.ARQUIVO_AVENTURAS, "r", encoding="utf-8") as f:
             dados_carregados = json.load(f)
             assert "123456" in dados_carregados
-    
-    def test_obter_aventura_usuario(self, aventura_cog, aventura_data):
-        """Teste obter aventura de usuário específico"""
-        with patch.object(aventura_cog, 'carregar_dados', return_value={"123456": aventura_data}):
-            resultado = aventura_cog.obter_aventura_usuario(123456)
+
+    @pytest.mark.asyncio
+    async def test_obter_aventura_usuario(self, aventura_cog, aventura_data):
+        """Teste obter aventura de usuário específico (JSON mode)"""
+        with patch.object(aventura_cog, '_carregar_dados_json', return_value={"123456": aventura_data}):
+            resultado = await aventura_cog.obter_aventura_usuario(123456)
             assert resultado == aventura_data
-    
-    def test_obter_aventura_usuario_nao_existente(self, aventura_cog):
-        """Teste obter aventura de usuário sem aventura"""
-        with patch.object(aventura_cog, 'carregar_dados', return_value={}):
-            resultado = aventura_cog.obter_aventura_usuario(999999)
+
+    @pytest.mark.asyncio
+    async def test_obter_aventura_usuario_nao_existente(self, aventura_cog):
+        """Teste obter aventura de usuário sem aventura (JSON mode)"""
+        with patch.object(aventura_cog, '_carregar_dados_json', return_value={}):
+            resultado = await aventura_cog.obter_aventura_usuario(999999)
             assert resultado is None
-    
-    def test_remover_aventura_usuario(self, aventura_cog, aventura_data):
-        """Teste remover aventura de usuário"""
-        with patch.object(aventura_cog, 'carregar_dados', return_value={"123456": aventura_data}), \
-             patch.object(aventura_cog, 'salvar_dados') as mock_salvar:
-            
-            resultado = aventura_cog.remover_aventura_usuario(123456)
+
+    @pytest.mark.asyncio
+    async def test_remover_aventura_usuario(self, aventura_cog, aventura_data):
+        """Teste remover aventura de usuário (JSON mode)"""
+        with patch.object(aventura_cog, '_carregar_dados_json', return_value={"123456": aventura_data}), \
+             patch.object(aventura_cog, '_salvar_dados_json') as mock_salvar:
+
+            resultado = await aventura_cog.remover_aventura_usuario(123456)
             assert resultado is True
             mock_salvar.assert_called_once()
-    
-    def test_remover_aventura_usuario_nao_existente(self, aventura_cog):
-        """Teste remover aventura de usuário sem aventura"""
-        with patch.object(aventura_cog, 'carregar_dados', return_value={}), \
-             patch.object(aventura_cog, 'salvar_dados') as mock_salvar:
-            
-            resultado = aventura_cog.remover_aventura_usuario(999999)
+
+    @pytest.mark.asyncio
+    async def test_remover_aventura_usuario_nao_existente(self, aventura_cog):
+        """Teste remover aventura de usuário sem aventura (JSON mode)"""
+        with patch.object(aventura_cog, '_carregar_dados_json', return_value={}), \
+             patch.object(aventura_cog, '_salvar_dados_json') as mock_salvar:
+
+            resultado = await aventura_cog.remover_aventura_usuario(999999)
             assert resultado is False
             mock_salvar.assert_not_called()
-    
-    def test_adicionar_aventura_usuario(self, aventura_cog, aventura_data):
-        """Teste adicionar aventura para usuário"""
-        with patch.object(aventura_cog, 'carregar_dados', return_value={}), \
-             patch.object(aventura_cog, 'salvar_dados') as mock_salvar:
-            
-            aventura_cog.adicionar_aventura_usuario(123456, aventura_data)
+
+    @pytest.mark.asyncio
+    async def test_adicionar_aventura_usuario(self, aventura_cog, aventura_data):
+        """Teste adicionar aventura para usuário (JSON mode)"""
+        with patch.object(aventura_cog, '_carregar_dados_json', return_value={}), \
+             patch.object(aventura_cog, '_salvar_dados_json') as mock_salvar:
+
+            await aventura_cog.adicionar_aventura_usuario(123456, aventura_data)
             mock_salvar.assert_called_once()
     
     def test_obter_tempo_restante(self, aventura_cog):
