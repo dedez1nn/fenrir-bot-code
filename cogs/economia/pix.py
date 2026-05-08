@@ -7,16 +7,24 @@ import base64
 from io import BytesIO
 import asyncio
 import json
-from datetime import datetime
+import logging
+from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 import os
 load_dotenv()
 
+from repositories import users as users_repo
+
+log = logging.getLogger(__name__)
+
 TOKEN = os.getenv("ACCESS_TOKEN")
+
+
 class PixCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.mp_sdk = mercadopago.SDK(TOKEN)
+        self.use_db = False
         self.planos = {
             "aventureiro": 3.99,
             "lendario": 7.99,
@@ -47,6 +55,49 @@ class PixCog(commands.Cog):
         
         self.verificar_premium_loop.start()
 
+    async def cog_load(self):
+        self.use_db = self.bot.db is not None
+
+    # ─── grant premium via webhook (chamado pelo bot após NOTIFY) ─────────────
+
+    async def grant_premium_rewards(self, user_id: int, plano: str) -> None:
+        """Concede role, coins e XP quando premium é ativado via webhook do MP."""
+        guild = self.bot.get_guild(self.bot.config.guild_id if self.bot.config else 0)
+        if guild:
+            member = guild.get_member(user_id)
+            cargo_id = self.cargos.get(plano)
+            if member and cargo_id:
+                cargo = guild.get_role(cargo_id)
+                if cargo and cargo not in member.roles:
+                    try:
+                        await member.add_roles(cargo)
+                    except Exception as exc:
+                        log.warning("Falha ao adicionar cargo %s para %s: %s", cargo_id, user_id, exc)
+
+        recompensa = self.recompensas.get(plano, {})
+        if recompensa.get("coins"):
+            await self.adicionar_coins_manual(user_id, recompensa["coins"])
+        if recompensa.get("xp"):
+            await self.adicionar_xp_manual(user_id, recompensa["xp"])
+
+        canal_log = self.bot.get_channel(
+            self.bot.config.get("xp_log_channel_id") if self.bot.config else None
+        )
+        if canal_log:
+            user = self.bot.get_user(user_id)
+            embed = discord.Embed(
+                title="💎 Plano Premium Ativado (Webhook)",
+                description=(
+                    f"**Usuário:** {user.mention if user else user_id}\n"
+                    f"**Plano:** {plano.title()}\n"
+                    f"**Recompensas:** {recompensa.get('coins', 0)} coins + {recompensa.get('xp', 0)} XP"
+                ),
+                color=discord.Color.gold(),
+                timestamp=discord.utils.utcnow(),
+            )
+            if user:
+                embed.set_thumbnail(url=user.display_avatar.url)
+            await canal_log.send(embed=embed)
 
     async def carregar_emojis(self, guild):
         self.emoji_aventureiro = discord.utils.get(guild.emojis, name="aventureiro_premium")
@@ -325,34 +376,40 @@ class PixCog(commands.Cog):
             print(f"Erro ao confirmar pagamento: {e}")
 
     async def atualizar_premium_usuario(self, user_id: int, plano: str):
+        if self.use_db:
+            try:
+                expira = datetime.now(timezone.utc) + timedelta(days=30)
+                await users_repo.set_premium(self.bot.db, user_id, plano, expira)
+                uid_str = str(user_id)
+                for cog_name in ("FenrirCoins", "XPCog"):
+                    cog = self.bot.get_cog(cog_name)
+                    if cog and uid_str in getattr(cog, "user_data", {}):
+                        cog.user_data[uid_str]["premium"] = plano
+                return
+            except Exception as e:
+                log.error("Erro ao atualizar premium (DB) para %s: %s", user_id, e)
+                # Não faz fallback — erro de DB é crítico aqui
+
+        # ── Fallback JSON ──────────────────────────────────────────────────────
         try:
             with open("data/user_data.json", "r", encoding="utf-8") as f:
                 user_data = json.load(f)
-            
+
             user_id_str = str(user_id)
-            
             if user_id_str not in user_data:
                 user_data[user_id_str] = {
-                    "xp": 0,
-                    "nivel": 1,
-                    "titulo": "Aprendiz",
-                    "dobro": False,
-                    "premium": None,
-                    "coins": 0,
-                    "daily_streak": 0,
-                    "last_daily": None,
-                    "total_ganho": 0,
-                    "premium_expiracao": None
+                    "xp": 0, "nivel": 1, "titulo": "Aprendiz", "dobro": False,
+                    "premium": None, "coins": 0, "daily_streak": 0,
+                    "last_daily": None, "total_ganho": 0, "premium_expiracao": None,
                 }
 
             expiracao = datetime.now().timestamp() + (30 * 24 * 60 * 60)
-            
             user_data[user_id_str]["premium"] = plano
             user_data[user_id_str]["premium_expiracao"] = expiracao
-            
+
             with open("data/user_data.json", "w", encoding="utf-8") as f:
                 json.dump(user_data, f, indent=4, ensure_ascii=False)
-            
+
         except Exception as e:
             print(f"❌ Erro ao atualizar premium do usuário {user_id}: {e}")
             
@@ -368,10 +425,72 @@ class PixCog(commands.Cog):
         await self.bot.wait_until_ready()
 
     async def _executar_verificacao_premium(self):
+        if self.use_db:
+            await self._verificar_premium_db()
+        else:
+            await self._verificar_premium_json()
+
+    async def _verificar_premium_db(self):
+        """Remove premiums expirados diretamente do banco."""
+        try:
+            agora = datetime.now(timezone.utc)
+            async with self.bot.db.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT user_id, premium FROM users
+                    WHERE premium IS NOT NULL
+                      AND premium_expira IS NOT NULL
+                      AND premium_expira < $1
+                    """,
+                    agora,
+                )
+                if not rows:
+                    return
+
+                user_ids = [r["user_id"] for r in rows]
+                await conn.execute(
+                    """
+                    UPDATE users
+                    SET premium = NULL, premium_expira = NULL, updated_at = NOW()
+                    WHERE user_id = ANY($1::bigint[])
+                    """,
+                    user_ids,
+                )
+
+            usuarios_removidos = [(str(r["user_id"]), r["premium"]) for r in rows]
+            guild = self.bot.get_guild(self.bot.config.guild_id if self.bot.config else 0)
+
+            for uid_str, _plano in usuarios_removidos:
+                # Invalida caches em memória
+                for cog_name in ("FenrirCoins", "XPCog"):
+                    cog = self.bot.get_cog(cog_name)
+                    if cog and uid_str in getattr(cog, "user_data", {}):
+                        cog.user_data[uid_str]["premium"] = None
+
+                # Remove cargo no Discord
+                if guild:
+                    member = guild.get_member(int(uid_str))
+                    if member:
+                        for cargo_id in self.cargos.values():
+                            cargo = guild.get_role(cargo_id)
+                            if cargo and cargo in member.roles:
+                                try:
+                                    await member.remove_roles(cargo)
+                                except Exception as e:
+                                    print(f"⚠️ Erro ao remover cargo do usuário {uid_str}: {e}")
+
+            await self._enviar_log_expirados(usuarios_removidos)
+
+        except Exception as e:
+            print(f"❌ Erro ao verificar premium (DB): {e}")
+            raise
+
+    async def _verificar_premium_json(self):
+        """Remove premiums expirados do JSON legado."""
         try:
             with open("data/user_data.json", "r", encoding="utf-8") as f:
                 user_data = json.load(f)
-            
+
             agora = datetime.now().timestamp()
             atualizado = False
             usuarios_removidos = []
@@ -384,7 +503,7 @@ class PixCog(commands.Cog):
                         data["premium_expiracao"] = None
                         atualizado = True
                         usuarios_removidos.append((user_id_str, plano_expirado))
-                        
+
                         try:
                             guild = self.bot.get_guild(self.bot.config.guild_id if self.bot.config else 0)
                             if guild:
@@ -401,61 +520,79 @@ class PixCog(commands.Cog):
                 with open("data/user_data.json", "w", encoding="utf-8") as f:
                     json.dump(user_data, f, indent=4, ensure_ascii=False)
 
-                
-                canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
-                if canal_log and usuarios_removidos:
-                    embed = discord.Embed(
-                        title="⏰ Premiums Expirados Removidos",
-                        description=f"**Total de usuários:** {len(usuarios_removidos)}",
-                        color=0xff9900,
-                        timestamp=discord.utils.utcnow()
-                    )
-                    
-                    for user_id, plano in usuarios_removidos[:10]:
-                        user = self.bot.get_user(int(user_id))
-                        nome_user = user.mention if user else f"ID: {user_id}"
-                        embed.add_field(
-                            name=nome_user,
-                            value=f"Plano: {plano.title()}",
-                            inline=True
-                        )
-                    
-                    if len(usuarios_removidos) > 10:
-                        embed.add_field(
-                            name="...",
-                            value=f"E mais {len(usuarios_removidos) - 10} usuários",
-                            inline=False
-                        )
-                    
-                    await canal_log.send(embed=embed)
-                        
+            await self._enviar_log_expirados(usuarios_removidos)
+
         except Exception as e:
             print(f"❌ Erro ao executar verificação de premium: {e}")
             raise
+
+    async def _enviar_log_expirados(self, usuarios_removidos: list):
+        """Envia embed de log com premiums expirados."""
+        if not usuarios_removidos:
+            return
+        canal_log = self.bot.get_channel(
+            self.bot.config.get("xp_log_channel_id") if self.bot.config else None
+        )
+        if not canal_log:
+            return
+
+        embed = discord.Embed(
+            title="⏰ Premiums Expirados Removidos",
+            description=f"**Total de usuários:** {len(usuarios_removidos)}",
+            color=0xFF9900,
+            timestamp=discord.utils.utcnow(),
+        )
+        for uid_str, plano in usuarios_removidos[:10]:
+            user = self.bot.get_user(int(uid_str))
+            nome_user = user.mention if user else f"ID: {uid_str}"
+            embed.add_field(name=nome_user, value=f"Plano: {plano.title()}", inline=True)
+
+        if len(usuarios_removidos) > 10:
+            embed.add_field(
+                name="...",
+                value=f"E mais {len(usuarios_removidos) - 10} usuários",
+                inline=False,
+            )
+
+        await canal_log.send(embed=embed)
 
     def cog_unload(self):
         self.verificar_premium_loop.cancel()
 
     async def adicionar_coins_manual(self, user_id, quantidade):
+        # Tenta rotear pelo cog de coins (já tem suporte DB + cache + logs)
+        coins_cog = self.bot.get_cog("FenrirCoins")
+        if coins_cog:
+            try:
+                await coins_cog.adicionar_coins_sem_multiplo(
+                    user_id, quantidade, "Compra de plano premium"
+                )
+                return
+            except Exception as e:
+                log.warning("FenrirCoins.adicionar_coins_sem_multiplo falhou: %s", e)
+
+        # ── Fallback JSON ──────────────────────────────────────────────────────
         try:
             with open("data/user_data.json", "r", encoding="utf-8") as f:
                 user_data = json.load(f)
-            
+
             user_id_str = str(user_id)
             if user_id_str not in user_data:
                 user_data[user_id_str] = {
                     "xp": 0, "nivel": 1, "titulo": "Aprendiz", "dobro": False,
                     "premium": None, "coins": 0, "daily_streak": 0,
-                    "last_daily": None, "total_ganho": 0
+                    "last_daily": None, "total_ganho": 0,
                 }
-            
-            user_data[user_id_str]["coins"] += quantidade
+
+            user_data[user_id_str]["coins"]      += quantidade
             user_data[user_id_str]["total_ganho"] += quantidade
-            
+
             with open("data/user_data.json", "w", encoding="utf-8") as f:
                 json.dump(user_data, f, indent=4, ensure_ascii=False)
-            
-            canal_log = self.bot.get_channel(self.bot.config.get("coins_log_channel_id") if self.bot.config else None)
+
+            canal_log = self.bot.get_channel(
+                self.bot.config.get("coins_log_channel_id") if self.bot.config else None
+            )
             if canal_log:
                 user = self.bot.get_user(user_id)
                 if user:
@@ -467,32 +604,44 @@ class PixCog(commands.Cog):
                             f"**Motivo:** Compra de plano premium\n"
                             f"**Data:** {discord.utils.format_dt(discord.utils.utcnow(), 'F')}"
                         ),
-                        color=discord.Color.green()
+                        color=discord.Color.green(),
                     )
                     await canal_log.send(embed=embed)
-                    
+
         except Exception as e:
             print(f"❌ Erro ao adicionar coins manualmente: {e}")
 
     async def adicionar_xp_manual(self, user_id, xp_ganho):
+        # Tenta rotear pelo cog de XP (já tem suporte DB + cache + logs)
+        xp_cog = self.bot.get_cog("XPCog")
+        if xp_cog:
+            try:
+                await xp_cog.adicionar_xp_sem_multiplo(user_id, xp_ganho, "Compra de plano premium")
+                return
+            except Exception as e:
+                log.warning("XPCog.adicionar_xp_sem_multiplo falhou: %s", e)
+
+        # ── Fallback JSON ──────────────────────────────────────────────────────
         try:
             with open("data/user_data.json", "r", encoding="utf-8") as f:
                 user_data = json.load(f)
-            
+
             user_id_str = str(user_id)
             if user_id_str not in user_data:
                 user_data[user_id_str] = {
                     "xp": 0, "nivel": 1, "titulo": "Aprendiz", "dobro": False,
                     "premium": None, "coins": 0, "daily_streak": 0,
-                    "last_daily": None, "total_ganho": 0
+                    "last_daily": None, "total_ganho": 0,
                 }
-            
+
             user_data[user_id_str]["xp"] += xp_ganho
-            
+
             with open("data/user_data.json", "w", encoding="utf-8") as f:
                 json.dump(user_data, f, indent=4, ensure_ascii=False)
-            
-            canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
+
+            canal_log = self.bot.get_channel(
+                self.bot.config.get("xp_log_channel_id") if self.bot.config else None
+            )
             if canal_log:
                 user = self.bot.get_user(user_id)
                 if user:
@@ -504,10 +653,10 @@ class PixCog(commands.Cog):
                             f"**Motivo:** Compra de plano premium\n"
                             f"**Data:** {discord.utils.format_dt(discord.utils.utcnow(), 'F')}"
                         ),
-                        color=discord.Color.blue()
+                        color=discord.Color.blue(),
                     )
                     await canal_log.send(embed=embed)
-                    
+
         except Exception as e:
             print(f"❌ Erro ao adicionar XP manualmente: {e}")
 

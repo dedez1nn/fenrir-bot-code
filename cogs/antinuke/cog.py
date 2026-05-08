@@ -26,6 +26,17 @@ class AntiNuke(commands.Cog):
         except Exception:
             self.config = AntinukeConfig()
 
+    async def reload_config_from_db(self) -> None:
+        """Recarrega AntinukeConfig do banco. Chamado pelo bot após NOTIFY da API."""
+        pool = getattr(self.bot, "db", None)
+        if pool is None:
+            return
+        try:
+            self.config = await AntinukeConfig.load_from_db(pool, self._primary_guild_id())
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("reload_config_from_db antinuke falhou: %s", exc)
+
     def _primary_guild_id(self) -> int:
         cfg = getattr(self.bot, "config", None)
         if cfg is not None:

@@ -48,6 +48,8 @@ class FenrirBot(commands.Bot):
         # Atributos populados em setup_hook; cogs devem checar `is not None`.
         self.db = None
         self.config = None
+        # Callback armazenado para poder remover o listener no shutdown
+        self._cache_notify_cb = None
 
     async def _init_database(self) -> None:
         """Inicializa pool, aplica migrations e importa JSONs se necessário.
@@ -85,6 +87,94 @@ class FenrirBot(commands.Bot):
             return
         guild_id = self.config.guild_id if self.config else GUILD_ID
         self.config = await refresh_server_config(self.db, guild_id)
+
+    # ─── LISTEN/NOTIFY (cache invalidation) ───────────────────────────────────
+
+    async def _start_cache_listener(self) -> None:
+        """Registra listener PostgreSQL NOTIFY no canal `fenrir_cache`.
+
+        Payloads suportados:
+          - `user:{id}`          — recarrega dados do usuário nos cogs
+          - `premium:{id}:{plan}`— recarrega + concede role/coins/xp
+          - `config:{guild_id}`  — recarrega server_config
+          - `antispam:{guild_id}`— recarrega config do antispam no cog
+          - `antinuke:{guild_id}`— recarrega config do antinuke no cog
+        """
+        if self.db is None:
+            return
+
+        def _on_notify(conn, pid, channel, payload):
+            asyncio.create_task(self._handle_cache_notification(payload))
+
+        self._cache_notify_cb = _on_notify
+        try:
+            await self.db.add_listener("fenrir_cache", _on_notify)
+            log.info("Cache listener ativo (LISTEN fenrir_cache).")
+        except Exception as exc:
+            log.warning("Falha ao iniciar cache listener: %s", exc)
+
+    async def _handle_cache_notification(self, payload: str) -> None:
+        """Despacha notificação de invalidação de cache."""
+        try:
+            kind, value = payload.split(":", 1)
+        except ValueError:
+            log.warning("Payload NOTIFY inválido: %r", payload)
+            return
+
+        if kind == "user":
+            await self._invalidate_user_cache(int(value))
+
+        elif kind == "premium":
+            # value = "{user_id}:{plano}"
+            parts = value.split(":", 1)
+            uid   = int(parts[0])
+            plano = parts[1] if len(parts) > 1 else None
+            await self._invalidate_user_cache(uid)
+            if plano:
+                pix_cog = self.get_cog("PixCog")
+                if pix_cog and hasattr(pix_cog, "grant_premium_rewards"):
+                    try:
+                        await pix_cog.grant_premium_rewards(uid, plano)
+                    except Exception as exc:
+                        log.warning("grant_premium_rewards falhou para %s/%s: %s", uid, plano, exc)
+
+        elif kind == "config":
+            await self.reload_config()
+
+        elif kind == "antispam":
+            cog = self.get_cog("AntiSpam")
+            if cog and hasattr(cog, "reload_config_from_db"):
+                try:
+                    await cog.reload_config_from_db()
+                except Exception as exc:
+                    log.warning("AntiSpam.reload_config_from_db falhou: %s", exc)
+
+        elif kind == "antinuke":
+            cog = self.get_cog("AntiNuke")
+            if cog and hasattr(cog, "reload_config_from_db"):
+                try:
+                    await cog.reload_config_from_db()
+                except Exception as exc:
+                    log.warning("AntiNuke.reload_config_from_db falhou: %s", exc)
+
+    async def _invalidate_user_cache(self, user_id: int) -> None:
+        """Recarrega dados de um usuário do DB para os caches em memória."""
+        if self.db is None:
+            return
+        from repositories import users as users_repo
+
+        try:
+            row = await users_repo.get(self.db, user_id)
+            if row is None:
+                return
+            cached = users_repo.row_to_cache(row)
+            uid_str = str(user_id)
+            for cog_name in ("FenrirCoins", "XPCog"):
+                cog = self.get_cog(cog_name)
+                if cog and hasattr(cog, "user_data") and uid_str in cog.user_data:
+                    cog.user_data[uid_str].update(cached)
+        except Exception as exc:
+            log.warning("Falha ao invalidar cache do usuário %s: %s", user_id, exc)
 
     async def guard_channel(self, interaction: discord.Interaction) -> bool:
         """Verifica se o comando foi enviado no canal de comandos correto.
@@ -137,9 +227,15 @@ class FenrirBot(commands.Bot):
                     await self.load_extension(module)
 
         await self.tree.sync()
+        await self._start_cache_listener()
         log.info("Bot setup loaded")
 
     async def close(self) -> None:
+        if self.db is not None and self._cache_notify_cb is not None:
+            try:
+                await self.db.remove_listener("fenrir_cache", self._cache_notify_cb)
+            except Exception:
+                pass
         try:
             await close_pool()
         finally:

@@ -58,6 +58,27 @@ class AntiSpam(commands.Cog):
         guilds = self.bot.guilds
         return guilds[0].id if guilds else 0
 
+    async def reload_config_from_db(self) -> None:
+        """Recarrega AntispamConfig do banco. Chamado pelo bot após NOTIFY da API."""
+        pool = getattr(self.bot, "db", None)
+        if pool is None:
+            return
+        try:
+            new_cfg = await AntispamConfig.load_from_db(pool, self._primary_guild_id())
+            self.config = new_cfg
+            # Propaga config atualizada para os managers que guardam referência
+            if self.scoring:
+                self.scoring.config = new_cfg
+            if self.detector:
+                self.detector.config = new_cfg
+            if self.punisher:
+                self.punisher.config = new_cfg
+            if self.audit:
+                self.audit.config = new_cfg
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("reload_config_from_db antispam falhou: %s", exc)
+
     async def _is_exempt(self, message: discord.Message) -> bool:
         if message.author.bot or message.guild is None:
             return True

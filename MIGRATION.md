@@ -9,7 +9,7 @@
 | **2 — IDs hardcoded → `server_config`** | ✅ Concluída |
 | **3 — Loja + cooldowns no DB** | ✅ Concluída |
 | **4 — Usuários + XP/Coins no DB** | ✅ Concluída |
-| 5 — Webhook MP + painel admin | Pendente |
+| **5 — Webhook MP + painel admin** | ✅ Concluída |
 | 6 — Guilds + aventuras (futura) | Pendente |
 
 ---
@@ -24,34 +24,38 @@ Ambos persistiam estado em arquivos JSON, não tinham interface de administraç�
 
 ---
 
-## Arquitetura Atual (após Phases 0+1)
+## Arquitetura Atual (após Phase 5)
 
 ```
-┌────────────────────────────────────┐
-│         Container: fenrir          │
-│                                    │
-│  Fenrir + FenrirSecurity unificados│  asyncpg
-│  25 cogs (4 de segurança incluídos)│ ──────────────────────────────┐
-│  bot.db (asyncpg.Pool, opcional)   │                               │
-│  bot.config (ServerConfig + cache) │                               ▼
-└────────────────────────────────────┘              ┌───────────────────────────┐
-                                                    │    Container: postgres     │
-┌────────────────────────────────────┐              │                           │
-│         Container: api             │   asyncpg    │  10 tabelas (schema_v1):   │
-│                                    │ ────────────►│  server_config            │
-│  FastAPI scaffold (Phase 0)        │              │  users / items / cooldowns│
-│  /health (com ping ao DB)          │              │  antispam_users           │
-│  /config/{guild_id} (sem auth)     │              │  antispam_whitelist       │
-│  Auth/painel/webhook → Phase 5     │              │  antispam_config          │
-└────────────────────────────────────┘              │  antinuke_config          │
-                                                    │  antispam_audit           │
-                                                    │  schema_migrations        │
-                                                    └───────────────────────────┘
+┌──────────────────────────────────────────┐
+│           Container: fenrir              │
+│                                          │
+│  Fenrir + FenrirSecurity unificados      │  asyncpg (R/W)
+│  25 cogs (4 de segurança incluídos)      │ ──────────────────────────────┐
+│  bot.db (asyncpg.Pool, opcional)         │                               │
+│  bot.config (ServerConfig + cache 5min)  │  LISTEN fenrir_cache ◄────────┤
+│  _start_cache_listener() ativo           │                               │
+└──────────────────────────────────────────┘                               │
+                                                    ┌───────────────────────▼───────┐
+┌──────────────────────────────────────────┐        │    Container: postgres        │
+│           Container: api                 │        │                               │
+│                                          │asyncpg │  10 tabelas (schema_v1):      │
+│  FastAPI v0.5 — Phase 5 completo         ├───────►│  server_config                │
+│  /auth (Discord OAuth2 + JWT cookie)     │        │  users / items / cooldowns    │
+│  /webhooks/mercadopago (HMAC + MP API)   │NOTIFY ►│  antispam_users               │
+│  /config  /items  /users                 │        │  antispam_whitelist           │
+│  /antispam/config  /antispam/audit       │        │  antispam_config              │
+│  /antinuke/config                        │        │  antinuke_config              │
+│  require_admin (JWT, dev bypass)         │        │  antispam_audit               │
+└──────────────────────────────────────────┘        │  schema_migrations            │
+                                                    └───────────────────────────────┘
 ```
 
 **Bot e API se comunicam exclusivamente via banco** — sem HTTP entre eles.
 
-**Resiliência:** o bot opera com `bot.db = None` se o Postgres estiver indisponível. Cogs ainda em JSON (Phase 2-4 pendentes) seguem funcionando; cogs novos (antispam) caem no `JSONStorage` como fallback.
+**Invalidação de cache cross-process:** a API envia `pg_notify('fenrir_cache', '<kind>:<id>')` após mutações; o bot escuta via `pool.add_listener` e reage em tempo real sem restart.
+
+**Resiliência:** o bot opera com `bot.db = None` se o Postgres estiver indisponível. Todos os cogs migrados mantêm fallback JSON.
 
 ---
 
@@ -100,9 +104,9 @@ Ambos persistiam estado em arquivos JSON, não tinham interface de administraç�
 - Única falha pré-existente: `cogs/economia/pix.py` (precisa de `ACCESS_TOKEN` do Mercado Pago em runtime; sem relação com a migração).
 
 **Riscos remanescentes:**
-- Comandos `/antispam threshold` e `/antispam toggle` mutam o config em memória sem persistir. Ajustes via slash command somem no restart. Phase 5 (painel) ou um pequeno fix em Phase 2 deve substituir esses comandos por `await self.config.save_to_db(...)`.
-- `log_channel_id` ainda é campo dos dataclasses; deveria ler de `bot.config.antispam_log_channel_id` / `antinuke_log_channel_id` em Phase 2.
-- `_primary_guild_id()` em ambos os cogs usa `bot.config.guild_id` se disponível, senão `bot.guilds[0].id`. Aceitável até Phase 2.
+- ~~Comandos `/antispam threshold` e `/antispam toggle` mutam o config em memória sem persistir~~ — **resolvido na Phase 2** (`save_to_db` adicionado).
+- `log_channel_id` ainda é campo dos dataclasses; deveria ler de `bot.config.antispam_log_channel_id` / `antinuke_log_channel_id`. Baixa prioridade pois o painel (Phase 5) já permite editar via API.
+- `_primary_guild_id()` em ambos os cogs usa `bot.config.guild_id` se disponível, senão `bot.guilds[0].id`. Aceitável até Phase 6+.
 
 ---
 
@@ -183,16 +187,36 @@ Ambos persistiam estado em arquivos JSON, não tinham interface de administraç�
 - Cache pode ficar brevemente dessincronizado se a API atualizar o DB diretamente (ex: `PATCH /users/{id}/premium`). O bot rerenderiza o cache ao próximo `cog_load` (restart). Para hot-reload, a Phase 5 pode adicionar evento de invalidação.
 - `voice_xp_loop` e `dobro_xp_loop` ainda fazem updates individuais por usuário (não batch). Para a escala atual é aceitável; batch com `executemany` pode ser adicionado se o número de usuários simultâneos crescer.
 
-### Phase 5 — Webhook MP + painel admin
+### ✅ Phase 5 — Webhook MP + painel admin
 
-- [ ] `api/routers/auth.py`: Discord OAuth2 (authorize → callback → JWT em cookie HttpOnly), middleware `Depends(require_admin)` que valida cargo no servidor
-- [ ] `api/routers/webhooks.py`: validação HMAC do Mercado Pago, atualização de `users.premium` + `users.premium_expira` + invalidação de cache no bot
-- [ ] `api/routers/config.py` ganha trigger de `bot.reload_config()` após PATCH
-- [ ] ~~`api/routers/users.py`~~ — ✅ já entregue na Phase 4 (`GET /users`, `GET /users/{id}`, `PATCH /users/{id}/premium`)
-- [ ] ~~`api/routers/items.py`~~ — ✅ já entregue na Phase 3 (CRUD completo)
-- [ ] `api/routers/antispam.py`, `api/routers/antinuke.py`: leitura/escrita das configs JSONB + visualização de `antispam_audit`
-- [ ] Frontend (separado, possivelmente Next.js ou SvelteKit servindo do mesmo container API)
-- [ ] Cache invalidation: quando a API atualiza `users.premium` via webhook, notificar o bot para refletir no `self.user_data` em memória sem restart
+**Entregue:**
+- [x] `api/routers/auth.py`: Discord OAuth2 (authorize → callback → JWT em cookie HttpOnly); `require_admin` dependency exportada para proteger routers. Em desenvolvimento (JWT_SECRET padrão), a validação é dispensada.
+- [x] `api/routers/webhooks.py`: `POST /webhooks/mercadopago` — validação HMAC (`x-signature: ts=...,v1=...`), verifica status do pagamento via API MP, atualiza `users.premium` + `users.premium_expira`, envia `pg_notify('fenrir_cache', 'premium:{user_id}:{plano}')`.
+- [x] `api/routers/config.py` ganha `pg_notify('fenrir_cache', 'config:{guild_id}')` após PATCH — bot recarrega `server_config` imediatamente via cache listener.
+- [x] ~~`api/routers/users.py`~~ — ✅ já entregue na Phase 4
+- [x] ~~`api/routers/items.py`~~ — ✅ já entregue na Phase 3
+- [x] `api/routers/antispam.py`: `GET/PATCH /antispam/config/{guild_id}` (merge JSONB top-level) + `GET /antispam/audit/{guild_id}` (paginado, filtro por user_id). Todos requerem admin.
+- [x] `api/routers/antinuke.py`: `GET/PATCH /antinuke/config/{guild_id}` (merge JSONB + enabled + alert_only). Requer admin.
+- [x] **Cache invalidation via PostgreSQL LISTEN/NOTIFY**: `FenrirBot._start_cache_listener()` registra listener em `fenrir_cache` via `pool.add_listener()`. Payloads: `user:{id}`, `premium:{id}:{plan}`, `config:{guild_id}`, `antispam:{guild_id}`, `antinuke:{guild_id}`.
+- [x] `AntiSpam.reload_config_from_db()` + `AntiNuke.reload_config_from_db()`: recarregam config em memória sem restart ao receberem NOTIFY.
+- [x] `cogs/economia/pix.py` migrado para DB mode:
+  - `atualizar_premium_usuario` → `repositories/users.set_premium` + atualiza caches em memória dos cogs.
+  - `adicionar_coins_manual` → roteia por `FenrirCoins.adicionar_coins_sem_multiplo` (já DB-aware).
+  - `adicionar_xp_manual` → roteia por `XPCog.adicionar_xp_sem_multiplo` (já DB-aware).
+  - `_executar_verificacao_premium` → dual-mode: `_verificar_premium_db()` (query atômica batch) ou `_verificar_premium_json()` (legado). Log comum via `_enviar_log_expirados()`.
+  - `grant_premium_rewards(user_id, plano)`: novo método chamado pelo bot ao receber NOTIFY `premium:*`, adiciona role + coins + XP sem duplicar o fluxo manual.
+- [x] `.env.example` documentado: `ADMIN_ROLE_IDS`, `JWT_SECRET` com instrução de segurança.
+
+**Decisões de design:**
+- Auth em **modo desenvolvimento automático** quando `JWT_SECRET == "change-me-in-production"` — nenhuma trava nova em ambiente local/CI.
+- Webhook MP responde `200` imediatamente e processa em `BackgroundTasks` — atende ao contrato de retry do MP.
+- PATCH de antispam/antinuke usa `config || $patch::jsonb` (merge shallow) — para campos aninhados (scores, ladder, listas), o cliente envia o objeto completo; `from_dict()` tolerante garante validade na carga.
+- `grant_premium_rewards` é chamado **somente** pelo NOTIFY (fluxo webhook); o fluxo manual `confirmar_pagamento` continua chamando `atualizar_premium_usuario` + `adicionar_coins_manual` + `adicionar_xp_manual` diretamente, sem NOTIFY (evita double-grant).
+- Frontend (Next.js / SvelteKit) não incluído — Phase 5 entrega todos os endpoints necessários; o painel em si é work-in-progress separado.
+
+**Riscos remanescentes:**
+- Se o bot reiniciar antes de processar o NOTIFY, o grant de premium não ocorre. Mitigação futura: tabela `pending_premium_grants` com flag de processamento (Phase 6+).
+- `pool.add_listener` requer que a pool asyncpg suporte `LISTEN` via seu pool interno de conexões (suportado desde asyncpg 0.22+; versão atual 0.29.0).
 
 ### Phase 6 — Guilds + aventuras (futura)
 

@@ -92,4 +92,16 @@ async def patch_config(guild_id: int, body: Dict[str, Any]) -> Dict[str, Any]:
 
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="server_config não existe para esta guild")
+
+    # Notifica o bot para recarregar server_config do banco (invalida cache TTL)
+    try:
+        async with api_db.acquire() as notify_conn:
+            await notify_conn.execute(
+                "SELECT pg_notify('fenrir_cache', $1)",
+                f"config:{guild_id}",
+            )
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Falha ao enviar NOTIFY config: %s", exc)
+
     return dict(row)

@@ -42,6 +42,10 @@ Copy `.env.example` to `.env` and fill in:
 - `ACCESS_TOKEN` — Mercado Pago access token
 - `POSTGRES_PASSWORD` — Postgres password
 - `DATABASE_URL` — connection string. In docker-compose the host is `postgres`; for `python main.py` against a locally-exposed Postgres, use `localhost:5432`.
+- `JWT_SECRET` — sign admin panel session tokens (`openssl rand -hex 32`). Leave as default `change-me-in-production` in dev to disable auth checks.
+- `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` / `DISCORD_REDIRECT_URI` — Discord OAuth2 app credentials for the admin panel login.
+- `ADMIN_ROLE_IDS` — comma-separated Discord role IDs allowed to access the panel. Empty = any guild member.
+- `MP_WEBHOOK_SECRET` — Mercado Pago webhook signing secret for HMAC validation.
 
 The bot **does not crash if Postgres is unavailable** — it logs a warning and operates in legacy-JSON mode. `user_data.json`, `loja_data.json`, and `cooldowns_data.json` are now fallback-only (Phases 3–4 done). `guilds_data.json` and `aventuras_data.json` remain primary until Phase 6.
 
@@ -51,6 +55,7 @@ The bot **does not crash if Postgres is unavailable** — it logs a warning and 
 1. Calls `_init_database()` — initializes `bot.db` (asyncpg pool), applies migrations from `db/migrations/*.sql`, imports legacy JSONs into the DB if the target tables are empty, and loads `bot.config` (a `ServerConfig` cached for 5 min).
 2. Walks `cogs/` and loads extensions. **The walker has special handling for cog-packages**: if a directory has `__init__.py` defining `setup()` (e.g. `cogs/antispam`, `cogs/antinuke`), it's loaded once as a package and submodules are *not* loaded as separate cogs. Directories with empty `__init__.py` (e.g. `cogs/economia/`) keep the old behavior — each `.py` is its own cog.
 3. Syncs slash commands with `tree.sync()`.
+4. Calls `_start_cache_listener()` — registers `pool.add_listener("fenrir_cache", …)` to receive PostgreSQL NOTIFY events from the API. Payloads handled: `user:{id}` (reload user cache in FenrirCoins/XPCog), `premium:{id}:{plano}` (reload cache + call `PixCog.grant_premium_rewards`), `config:{guild_id}` (reload `server_config`), `antispam:{guild_id}` (call `AntiSpam.reload_config_from_db`), `antinuke:{guild_id}` (call `AntiNuke.reload_config_from_db`).
 
 On `on_ready`, it posts/refreshes persistent embeds in fixed channels (status, colors, pix plans, tickets) — all channel IDs are resolved via `bot.config.get("key")` (Phase 2 complete).
 
@@ -75,7 +80,16 @@ On `on_ready`, it posts/refreshes persistent embeds in fixed channels (status, c
 - `db/migrations/001_initial.sql` — full schema (10 tables).
 - `db/migrations/002_seed.sql` — initial `server_config` row with the current hardcoded IDs.
 
-**`api/` package** — FastAPI (Phases 0–4). `/health` checks the DB; `/config/{guild_id}` reads/patches the row; `/items` full CRUD; `/users` list/get/patch-premium. Auth, panel, and Mercado Pago webhook are scheduled for Phase 5.
+**`api/` package** — FastAPI (Phases 0–5). Routers registrados:
+- `/health` — liveness + readiness (ping DB)
+- `/auth/*` — Discord OAuth2 (`/authorize`, `/callback`, `/logout`, `/me`). Dependência `require_admin` exportada de `api/routers/auth.py`; em desenvolvimento (JWT_SECRET padrão) a validação é dispensada automaticamente.
+- `/webhooks/mercadopago` — valida HMAC `x-signature`, processa pagamento aprovado em background, atualiza `users.premium` e envia `pg_notify('fenrir_cache', 'premium:{id}:{plano}')`.
+- `/config/{guild_id}` — lê/atualiza `server_config`; PATCH envia `pg_notify('fenrir_cache', 'config:{guild_id}')` para o bot recarregar sem restart.
+- `/items` — CRUD completo de itens da loja.
+- `/users` — listagem paginada, consulta individual, atualização de premium.
+- `/antispam/config/{guild_id}` — lê/atualiza `antispam_config` (requer admin); PATCH envia NOTIFY.
+- `/antispam/audit/{guild_id}` — listagem paginada de `antispam_audit` com filtro por usuário (requer admin).
+- `/antinuke/config/{guild_id}` — lê/atualiza `antinuke_config` (requer admin); PATCH envia NOTIFY.
 
 **`repositories/` package** (Phases 3–4) — thin async wrappers over asyncpg for the bot's hot path:
 - `repositories/items.py` — `get_all`, `get_by_id`, `create`, `delete_one`, `delete_all`
@@ -92,6 +106,7 @@ On `on_ready`, it posts/refreshes persistent embeds in fixed channels (status, c
 | `cogs/economia/cooldown.py` | ✅ Postgres via `repositories/cooldowns` (with JSON fallback) |
 | `cogs/economia/fenrir_coins.py` | ✅ Postgres via `repositories/users` (with JSON fallback) |
 | `cogs/progressao/xp.py` | ✅ Postgres via `repositories/users` (with JSON fallback) |
+| `cogs/economia/pix.py` | ✅ Postgres via `repositories/users` (with JSON fallback) |
 | Guilds, adventures | Still JSON (Phase 6) |
 
 **Legacy JSON files in `data/`:**
@@ -116,13 +131,19 @@ When you add new state, write directly to Postgres — do NOT add JSON files.
 
 **Level-up role system** (`xp.py:cargos_por_nivel`): Roles are assigned at levels 2, 5, 10, 20, 30, 40, 50. The map is now loaded from `bot.config["levelup_role_map"]` (JSONB, string keys: `{"2": role_id, ...}`) with hardcoded defaults as fallback. The `atualizar_cargos` method adds eligible roles and removes ones below the current level. Known bug — see `FIX_BUGS.md`.
 
-**DB-mode cogs and `cog_load`:** `FenrirCoins` and `XPCog` implement `async def cog_load(self)` which sets `self.use_db = self.bot.db is not None`, populates `self.user_data` from the `users` table, and reads runtime parameters from `bot.config`. All mutation methods check `self.use_db` and call `repositories/users.py` functions in DB mode; `salvar_dados()` is a no-op in DB mode. Tests that instantiate these cogs must set `bot.db = None` so `cog_load` falls back to JSON mode.
+**DB-mode cogs and `cog_load`:** `FenrirCoins`, `XPCog`, and `PixCog` implement `async def cog_load(self)` which sets `self.use_db = self.bot.db is not None`, populates `self.user_data` from the `users` table, and reads runtime parameters from `bot.config`. All mutation methods check `self.use_db` and call `repositories/users.py` functions in DB mode; `salvar_dados()` is a no-op in DB mode. Tests that instantiate these cogs must set `bot.db = None` so `cog_load` falls back to JSON mode.
+
+**Premium activation flows** (`cogs/economia/pix.py`): There are two independent paths — do **not** mix them:
+1. **Manual** (`confirmar_pagamento` button): bot-side only. Calls `atualizar_premium_usuario` (DB/JSON) → `adicionar_coins_manual` (routes through `FenrirCoins.adicionar_coins_sem_multiplo`) → `adicionar_xp_manual` (routes through `XPCog.adicionar_xp_sem_multiplo`) → adds Discord role directly. No NOTIFY sent.
+2. **Automatic webhook** (`POST /webhooks/mercadopago`): API validates HMAC, fetches payment from MP, updates `users.premium` in DB, sends `pg_notify('fenrir_cache', 'premium:{user_id}:{plano}')`. Bot receives it, invalidates cache, calls `PixCog.grant_premium_rewards(user_id, plano)` which adds role + coins + XP.
+
+**`AntiSpam.reload_config_from_db()` / `AntiNuke.reload_config_from_db()`:** Called by the bot's cache listener when it receives `antispam:{guild_id}` or `antinuke:{guild_id}` NOTIFY. Reloads the config from `antispam_config`/`antinuke_config` tables and propagates the new config object to all internal managers (`ScoreManager`, `Detector`, `Punisher`, `AuditLogger`) without requiring a bot restart.
 
 **Tests:** Use `pytest-asyncio` with `asyncio_mode = auto`. Pattern for testing cogs: mock `commands.Bot`, set `bot.db = None` and `cog.use_db = False` to keep tests in JSON mode, patch background `tasks.loop` decorators to prevent them from starting, and use `AsyncMock` for Discord interactions. Test fixtures must populate `bot.config` (a `ServerConfig` wrapping a dict with at least `commands_channel_id`) so that `guard_channel` can resolve correctly.
 
 ## Migration plan
 
-A full migration plan with the status of every phase lives in `MIGRATION.md`. Phases 0–4 are done; Phase 5 (webhook MP + painel admin) is next.
+A full migration plan with the status of every phase lives in `MIGRATION.md`. Phases 0–5 are done; Phase 6 (guilds + aventuras) is next.
 
 Key invariants for any new code:
 - **Bot talks directly to Postgres via `asyncpg`** — no HTTP intermediary between bot and database.
@@ -131,3 +152,5 @@ Key invariants for any new code:
 - **`FenrirCoins` + `XPCog` race condition is fixed** — mutations use targeted `UPDATE … SET field = $2` (not write-entire-row), so concurrent saves from the two cogs never overwrite each other.
 - **Resilience contract**: if `bot.db is None`, the bot logs a warning and continues in JSON mode. Code paths that touch the DB must check `self.use_db` (cogs) or `if self.bot.db is not None` (elsewhere).
 - **New state goes to Postgres** — do NOT add JSON files. If a cog needs a new persistent field, add a column to the appropriate table and expose it through `repositories/`.
+- **Cache invalidation is cross-process via NOTIFY** — when the API updates any shared state (premium, server_config, antispam/antinuke config), it must call `pg_notify('fenrir_cache', '<kind>:<id>')`. The bot's listener handles the rest. Never rely on TTL expiry alone for admin operations.
+- **API auth**: new endpoints that mutate config must use `Depends(require_admin)` from `api/routers/auth.py`. The dependency is a no-op in dev mode (JWT_SECRET at default value); set a real secret in production via `JWT_SECRET` env var.

@@ -1,8 +1,6 @@
 """FastAPI — painel administrativo do Fenrir.
 
-Estado atual (Fase 0): scaffold com endpoints de saúde e leitura de
-`server_config`. Autenticação OAuth2, painel completo e webhook MP serão
-adicionados na Fase 5.
+Phase 5: Discord OAuth2, webhook Mercado Pago, endpoints antispam/antinuke.
 """
 
 from __future__ import annotations
@@ -16,9 +14,13 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import db as api_db
+from .routers import antinuke as antinuke_router
+from .routers import antispam as antispam_router
+from .routers import auth as auth_router
 from .routers import config as config_router
 from .routers import items as items_router
 from .routers import users as users_router
+from .routers import webhooks as webhooks_router
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -36,8 +38,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Fenrir Admin API",
-    version="0.1.0",
-    description="API administrativa do Fenrir — Fase 0 (scaffold).",
+    version="0.5.0",
+    description="API administrativa do Fenrir — Phase 5 (auth + webhook MP + painel).",
     lifespan=lifespan,
 )
 
@@ -64,6 +66,10 @@ async def health() -> Dict[str, Any]:
     return {"status": "ok" if db_ok else "degraded", "db": db_ok}
 
 
+app.include_router(auth_router.router)
+app.include_router(webhooks_router.router)
 app.include_router(config_router.router)
 app.include_router(items_router.router)
 app.include_router(users_router.router)
+app.include_router(antispam_router.router)
+app.include_router(antinuke_router.router)
