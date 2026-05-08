@@ -17,6 +17,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import db as api_db
 from .routers import config as config_router
+from .routers import items as items_router
+from .routers import users as users_router
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -63,3 +65,5 @@ async def health() -> Dict[str, Any]:
 
 
 app.include_router(config_router.router)
+app.include_router(items_router.router)
+app.include_router(users_router.router)

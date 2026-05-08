@@ -13,11 +13,24 @@ class ComandosLojaCog(commands.Cog):
     def get_cooldown_cog(self):
         return self.bot.get_cog("CooldownCog")
 
-    async def verificar_compra(self, user_id: int, item_id: int) -> bool:
+    async def verificar_compra(self, user_id: int, posicao: int) -> bool:
+        """Verifica se o usuário comprou o item na posição indicada.
+
+        Em DB mode, traduz a posição para o id real do item antes de checar.
+        """
         cooldown_cog = self.get_cooldown_cog()
-        if cooldown_cog:
-            return cooldown_cog.verificar_compra(user_id, item_id)
-        return False
+        if not cooldown_cog:
+            return False
+
+        # Tenta resolver o id real do DB a partir da posição na loja
+        loja_cog = self.bot.get_cog("LojaCog")
+        item_id = posicao  # fallback: usa posição diretamente (JSON mode)
+        if loja_cog:
+            item = loja_cog.encontrar_item_por_posicao(posicao)
+            if item:
+                item_id = item["id"]
+
+        return await cooldown_cog.verificar_compra(user_id, item_id)
 
     async def verificar_cooldown(self, user_id: int, comando: str, cooldown_segundos: int) -> bool:
         agora = time.time()

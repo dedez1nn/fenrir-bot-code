@@ -1,10 +1,15 @@
 import time
+from datetime import datetime, timezone
+
 import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
 from PIL import Image, ImageDraw, ImageFont
 import io, requests, os, json
+
+from repositories import users as users_repo
+
 
 class RankingCoinsView(discord.ui.View):
     def __init__(self, coins_cog, page=0):
@@ -181,18 +186,39 @@ class RankingCoinsView(discord.ui.View):
             except:
                 pass
 
+
 class FenrirCoins(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.ARQUIVO_DADOS = "data/user_data.json"
         self.user_data = self.carregar_dados()
         self.cooldowns = {}
-        
-        self.coins_por_mensagem = 5000      
+        self.use_db = False
+
+        self.coins_por_mensagem = 5000
         self.cooldown_mensagem = 180
-        self.coins_por_voz = 15000          
-        self.daily_coins = 10000               
-        self.streak_bonus = 10000       
+        self.coins_por_voz = 15000
+        self.daily_coins = 10000
+        self.streak_bonus = 10000
+
+    async def cog_load(self):
+        self.use_db = self.bot.db is not None
+        if self.use_db:
+            try:
+                rows = await users_repo.get_all(self.bot.db)
+                for row in rows:
+                    uid = str(row["user_id"])
+                    self.user_data[uid] = users_repo.row_to_cache(row)
+                print(f"💰 FenrirCoins: {len(rows)} usuários carregados do DB.")
+            except Exception as e:
+                print(f"❌ FenrirCoins: erro ao carregar usuários do DB: {e}")
+                self.use_db = False
+
+        if self.bot.config:
+            self.coins_por_mensagem = self.bot.config.get("coins_por_mensagem") or self.coins_por_mensagem
+            self.coins_por_voz = self.bot.config.get("coins_por_voz") or self.coins_por_voz
+            self.daily_coins = self.bot.config.get("daily_coins") or self.daily_coins
+            self.streak_bonus = self.bot.config.get("daily_streak_bonus") or self.streak_bonus
 
     def carregar_dados(self):
         if os.path.exists(self.ARQUIVO_DADOS):
@@ -211,6 +237,8 @@ class FenrirCoins(commands.Cog):
         return {}
 
     def salvar_dados(self):
+        if self.use_db:
+            return
         with open(self.ARQUIVO_DADOS, "w", encoding="utf-8") as f:
             json.dump(self.user_data, f, indent=4)
 
@@ -238,69 +266,82 @@ class FenrirCoins(commands.Cog):
         user_id_str = str(user_id)
         if user_id_str not in self.user_data:
             return 1, 1
-        
+
         premium = self.user_data[user_id_str].get("premium")
-        
+
         multiplicadores = {
             "aventureiro": (2, 2),
             "lendario": (4, 4),
             "mitico": (6, 6)
         }
-        
+
         return multiplicadores.get(premium, (1, 1))
-    
+
     async def adicionar_coins_sem_multiplo(self, user_id, quantidade, motivo=""):
         user_id_str = str(user_id)
         dados = self.obter_dados_usuario(user_id_str)
-        
-        dados["coins"] += quantidade
-        dados["total_ganho"] += quantidade
-        self.salvar_dados()
-        
+
+        if self.use_db:
+            try:
+                row = await users_repo.add_coins(self.bot.db, int(user_id), int(quantidade))
+                dados["coins"] = row["coins"]
+                dados["total_ganho"] = row["total_ganho"]
+            except Exception as e:
+                print(f"❌ add_coins DB falhou, usando cache: {e}")
+                dados["coins"] += quantidade
+                dados["total_ganho"] += quantidade
+        else:
+            dados["coins"] += quantidade
+            dados["total_ganho"] += quantidade
+            self.salvar_dados()
+
         await self.registrar_transacao(user_id, quantidade, motivo)
-        
-        await self.enviar_log(user_id, "Adição de Coins (Sem Multiplicador)", 
+        await self.enviar_log(user_id, "Adição de Coins (Sem Multiplicador)",
                             f"**Ação:** Adicionou {quantidade} coins\n"
-                            f"**Motivo:** {motivo}", 
+                            f"**Motivo:** {motivo}",
                             discord.Color.green())
-        
         print(f"💰 +{quantidade} coins para {user_id} ({motivo}) - SEM MULTIPLICADOR")
 
     async def adicionar_coins(self, user_id, quantidade, motivo=""):
         user_id_str = str(user_id)
         dados = self.obter_dados_usuario(user_id_str)
-        
-        quantidade_original = quantidade
-        
+
         if any(termo in motivo.lower() for termo in ["mensagem", "voz", "vitória", "daily", "bonus"]):
             guild_cog = self.bot.get_cog("GuildSystem")
             multiplicador_guild = 1.0
-            
+
             if guild_cog and "guild" in dados and dados["guild"]:
                 multiplicador_guild = guild_cog.calcular_multiplicador_guild(dados["guild"])
-            
+
             _, multiplicador_coins_premium = self.calcular_multiplicador_premium(user_id)
-            
+
             bonus_guild = multiplicador_guild - 1
             bonus_premium = multiplicador_coins_premium - 1
-            
+
             multiplicador_total = 1 + bonus_guild + bonus_premium
-            
             quantidade = quantidade * multiplicador_total
-        
-        dados["coins"] += quantidade
-        dados["total_ganho"] += quantidade
-        self.salvar_dados()
-        
+
+        if self.use_db:
+            try:
+                row = await users_repo.add_coins(self.bot.db, int(user_id), int(quantidade))
+                dados["coins"] = row["coins"]
+                dados["total_ganho"] = row["total_ganho"]
+            except Exception as e:
+                print(f"❌ add_coins DB falhou, usando cache: {e}")
+                dados["coins"] += quantidade
+                dados["total_ganho"] += quantidade
+        else:
+            dados["coins"] += quantidade
+            dados["total_ganho"] += quantidade
+            self.salvar_dados()
+
         await self.registrar_transacao(user_id, quantidade, motivo)
-        
-        await self.enviar_log(user_id, "Adição de Coins", 
+        await self.enviar_log(user_id, "Adição de Coins",
                             f"**Ação:** Adicionou {quantidade} coins\n"
-                            f"**Motivo:** {motivo}", 
+                            f"**Motivo:** {motivo}",
                             discord.Color.green())
-        
         print(f"💰 +{quantidade} coins para {user_id} ({motivo})")
-    
+
     async def registrar_transacao(self, user_id: int, quantidade: int, motivo: str):
         try:
             canal_log = self.bot.get_channel(self.bot.config.get("coins_log_channel_id") if self.bot.config else None)
@@ -324,20 +365,28 @@ class FenrirCoins(commands.Cog):
     async def remover_coins(self, user_id: int, quantidade: int, motivo: str = "Sistema"):
         user_id_str = str(user_id)
         dados = self.obter_dados_usuario(user_id_str)
-        coins_atuais = dados["coins"]
-        nova_quantidade = max(0, coins_atuais - quantidade)
-        dados["coins"] = nova_quantidade
-        self.salvar_dados()
-        
+
+        if self.use_db:
+            try:
+                row = await users_repo.remove_coins(self.bot.db, int(user_id), int(quantidade))
+                dados["coins"] = row["coins"]
+            except Exception as e:
+                print(f"❌ remove_coins DB falhou, usando cache: {e}")
+                dados["coins"] = max(0, dados["coins"] - quantidade)
+        else:
+            coins_atuais = dados["coins"]
+            dados["coins"] = max(0, coins_atuais - quantidade)
+            self.salvar_dados()
+
         await self.registrar_transacao(user_id, -quantidade, motivo)
-        
+
     async def enviar_log(self, user_id, acao, descricao, cor=discord.Color.dark_red()):
         try:
-            canal_log = self.bot.get_channel(self.bot.config.get("coins_log_channel_id") if self.bot.config else None) 
+            canal_log = self.bot.get_channel(self.bot.config.get("coins_log_channel_id") if self.bot.config else None)
             if canal_log:
                 user = self.bot.get_user(int(user_id))
                 user_mention = user.mention if user else f"Usuário {user_id}"
-                
+
                 embed_log = discord.Embed(
                     title=f"💰 {acao}",
                     description=f"{descricao}\n\n**Usuário:** {user_mention}",
@@ -353,13 +402,21 @@ class FenrirCoins(commands.Cog):
 
     @app_commands.command(name="coins", description="Ver suas coins ou de outro usuário")
     async def coins(self, interaction: discord.Interaction, membro: discord.Member = None):
-
         if await self.bot.guard_channel(interaction):
             return
-        
+
         membro = membro or interaction.user
-        dados = self.obter_dados_usuario(membro.id)
-        
+
+        if self.use_db:
+            try:
+                row = await users_repo.get_or_create(self.bot.db, membro.id)
+                dados = users_repo.row_to_cache(row)
+                self.user_data[str(membro.id)] = dados
+            except Exception:
+                dados = self.obter_dados_usuario(membro.id)
+        else:
+            dados = self.obter_dados_usuario(membro.id)
+
         embed = discord.Embed(
             title=f"💰 Carteira de {membro.display_name}",
             color=discord.Color.gold()
@@ -368,56 +425,54 @@ class FenrirCoins(commands.Cog):
         embed.add_field(name="🔥 Streak Diário", value=f"`{dados['daily_streak']} dias`", inline=True)
         embed.add_field(name="🏆 Total Ganho", value=f"`{dados['total_ganho']}`", inline=True)
         embed.set_thumbnail(url=membro.display_avatar.url)
-        
+
         premium = dados.get("premium")
         if premium:
             multiplicador_xp, multiplicador_coins = self.calcular_multiplicador_premium(membro.id)
             embed.add_field(name="💎 Premium", value=f"{premium.title()} ({multiplicador_xp}x XP / {multiplicador_coins}x coins)", inline=False)
-        
+
         await interaction.response.send_message(embed=embed)
-        
+
         if membro.id == interaction.user.id:
             await self.enviar_log(
-                interaction.user.id, 
-                "Consulta de Saldo", 
+                interaction.user.id,
+                "Consulta de Saldo",
                 f"**Ação:** Consultou próprio saldo\n**Saldo:** {dados['coins']} coins"
             )
         else:
             await self.enviar_log(
-                interaction.user.id, 
-                "Consulta de Saldo", 
+                interaction.user.id,
+                "Consulta de Saldo",
                 f"**Ação:** Consultou saldo de {membro.mention}\n**Saldo:** {dados['coins']} coins"
             )
 
     @app_commands.command(name="daily", description="Resgatar coins diárias")
     async def daily(self, interaction: discord.Interaction):
-        
         if await self.bot.guard_channel(interaction):
             return
-        
+
         user_id = interaction.user.id
         dados = self.obter_dados_usuario(user_id)
         agora = time.time()
-        
+
         if dados["last_daily"] and (agora - dados["last_daily"]) < 86400:
             tempo_restante = 86400 - (agora - dados["last_daily"])
             horas = int(tempo_restante // 3600)
             minutos = int((tempo_restante % 3600) // 60)
-            
+
             await interaction.response.send_message(
                 f"⏰ Você já resgatou suas coins hoje!\n"
                 f"Volte em **{horas}h {minutos}m**",
                 ephemeral=True
             )
-            
             await self.enviar_log(
-                interaction.user.id, 
-                "Tentativa de Daily", 
+                interaction.user.id,
+                "Tentativa de Daily",
                 f"**Ação:** Tentou resgatar daily em cooldown\n**Tempo restante:** {horas}h {minutos}m",
                 discord.Color.orange()
             )
             return
-        
+
         streak = dados["daily_streak"]
         recompensa_base = self.daily_coins + (streak * self.streak_bonus)
 
@@ -430,11 +485,29 @@ class FenrirCoins(commands.Cog):
         multiplicador_total = 1 + (multiplicador_guild - 1) + (multiplicador_coins_premium - 1)
         recompensa_final = int(recompensa_base * multiplicador_total)
 
-        dados["daily_streak"] = streak + 1
-        dados["last_daily"] = agora
-        dados["coins"] += recompensa_final
-        dados["total_ganho"] += recompensa_final
-        self.salvar_dados()
+        if self.use_db:
+            try:
+                agora_dt = datetime.fromtimestamp(agora, tz=timezone.utc)
+                row = await users_repo.update_daily(
+                    self.bot.db, user_id, recompensa_final, streak + 1, agora_dt
+                )
+                dados["daily_streak"] = row["daily_streak"]
+                dados["last_daily"] = row["last_daily"].timestamp() if row.get("last_daily") else None
+                dados["coins"] = row["coins"]
+                dados["total_ganho"] = row["total_ganho"]
+            except Exception as e:
+                print(f"❌ update_daily DB falhou, usando JSON: {e}")
+                dados["daily_streak"] = streak + 1
+                dados["last_daily"] = agora
+                dados["coins"] += recompensa_final
+                dados["total_ganho"] += recompensa_final
+                self.salvar_dados()
+        else:
+            dados["daily_streak"] = streak + 1
+            dados["last_daily"] = agora
+            dados["coins"] += recompensa_final
+            dados["total_ganho"] += recompensa_final
+            self.salvar_dados()
 
         embed = discord.Embed(
             title="🎁 Recompensa Diária Resgatada!",
@@ -453,7 +526,6 @@ class FenrirCoins(commands.Cog):
         embed.set_footer(text="Volte amanhã para continuar sua sequência!")
 
         await interaction.response.send_message(embed=embed)
-
         await self.enviar_log(
             interaction.user.id,
             "Daily Resgatado",
@@ -467,58 +539,77 @@ class FenrirCoins(commands.Cog):
         quantidade="Quantidade de coins"
     )
     async def transferir(self, interaction: discord.Interaction, membro: discord.Member, quantidade: int):
-        
         if await self.bot.guard_channel(interaction):
             return
-        
+
         if quantidade <= 0:
             await interaction.response.send_message("❌ Quantidade deve ser maior que 0!", ephemeral=True)
             return
-            
+
         if membro.bot:
             await interaction.response.send_message("❌ Não pode transferir para bots!", ephemeral=True)
             return
-            
+
         if membro.id == interaction.user.id:
             await interaction.response.send_message("❌ Não pode transferir para si mesmo!", ephemeral=True)
             return
-        
+
         dados_remetente = self.obter_dados_usuario(interaction.user.id)
-        
+        saldo_anterior_remetente = dados_remetente["coins"]
+
         if dados_remetente["coins"] < quantidade:
             await interaction.response.send_message(
                 f"❌ Saldo insuficiente! Você tem {dados_remetente['coins']} coins",
                 ephemeral=True
             )
-            
             await self.enviar_log(
-                interaction.user.id, 
-                "Transferência Falhou", 
+                interaction.user.id,
+                "Transferência Falhou",
                 f"**Ação:** Tentou transferir {quantidade} coins para {membro.mention}\n**Motivo:** Saldo insuficiente\n**Saldo atual:** {dados_remetente['coins']} coins",
                 discord.Color.red()
             )
             return
-        
-        saldo_anterior_remetente = dados_remetente["coins"]
-        dados_remetente["coins"] -= quantidade
+
         dados_destino = self.obter_dados_usuario(membro.id)
         saldo_anterior_destino = dados_destino["coins"]
-        dados_destino["coins"] += quantidade
-        dados_destino["total_ganho"] = dados_destino.get("total_ganho", 0) + quantidade
-        self.salvar_dados()
-        
+
+        if self.use_db:
+            try:
+                s_row, r_row = await users_repo.transfer(
+                    self.bot.db, interaction.user.id, membro.id, quantidade
+                )
+                dados_remetente["coins"] = s_row["coins"]
+                dados_destino["coins"] = r_row["coins"]
+                dados_destino["total_ganho"] = r_row["total_ganho"]
+            except ValueError:
+                await interaction.response.send_message(
+                    f"❌ Saldo insuficiente! Você tem {dados_remetente['coins']} coins",
+                    ephemeral=True
+                )
+                return
+            except Exception as e:
+                print(f"❌ transfer DB falhou, usando JSON: {e}")
+                dados_remetente["coins"] -= quantidade
+                dados_destino["coins"] += quantidade
+                dados_destino["total_ganho"] = dados_destino.get("total_ganho", 0) + quantidade
+                self.salvar_dados()
+        else:
+            dados_remetente["coins"] -= quantidade
+            dados_destino["coins"] += quantidade
+            dados_destino["total_ganho"] = dados_destino.get("total_ganho", 0) + quantidade
+            self.salvar_dados()
+
         embed = discord.Embed(
             title="✅ Transferência Realizada!",
             description=f"**{quantidade} coins** transferidos para {membro.mention}",
             color=discord.Color.green()
         )
         embed.add_field(name="Seu saldo atual", value=f"`{dados_remetente['coins']} coins`", inline=True)
-        
+
         await interaction.response.send_message(embed=embed)
-        
         await self.enviar_log(
-            interaction.user.id, 
-            "Transferência Realizada", 
+            interaction.user.id,
+            "Transferência Realizada",
             f"**Ação:** Transferiu {quantidade} coins para {membro.mention}\n"
             f"**Saldo anterior remetente:** {saldo_anterior_remetente} coins\n"
             f"**Saldo atual remetente:** {dados_remetente['coins']} coins\n"
@@ -562,13 +653,24 @@ class FenrirCoins(commands.Cog):
         if quantidade <= 0:
             await interaction.response.send_message("❌ Quantidade deve ser maior que 0!", ephemeral=True)
             return
-        
+
         dados = self.obter_dados_usuario(membro.id)
         saldo_anterior = dados["coins"]
-        dados["coins"] += quantidade
-        dados["total_ganho"] += quantidade
-        self.salvar_dados()
-        
+
+        if self.use_db:
+            try:
+                row = await users_repo.add_coins(self.bot.db, membro.id, quantidade)
+                dados["coins"] = row["coins"]
+                dados["total_ganho"] = row["total_ganho"]
+            except Exception as e:
+                print(f"❌ add_coins_adm DB falhou: {e}")
+                dados["coins"] += quantidade
+                dados["total_ganho"] += quantidade
+        else:
+            dados["coins"] += quantidade
+            dados["total_ganho"] += quantidade
+            self.salvar_dados()
+
         embed = discord.Embed(
             title="✅ Coins Adicionadas!",
             description=f"**+{quantidade} coins** adicionados para {membro.mention}",
@@ -576,12 +678,11 @@ class FenrirCoins(commands.Cog):
         )
         embed.add_field(name="Saldo anterior", value=f"`{saldo_anterior} coins`", inline=True)
         embed.add_field(name="Saldo atual", value=f"`{dados['coins']} coins`", inline=True)
-        
+
         await interaction.response.send_message(embed=embed, ephemeral=True)
-        
         await self.enviar_log(
-            interaction.user.id, 
-            "Admin - Coins Adicionadas", 
+            interaction.user.id,
+            "Admin - Coins Adicionadas",
             f"**Ação:** Adicionou {quantidade} coins para {membro.mention}\n"
             f"**Saldo anterior:** {saldo_anterior} coins\n"
             f"**Saldo atual:** {dados['coins']} coins",
@@ -595,24 +696,31 @@ class FenrirCoins(commands.Cog):
         quantidade="Quantidade de coins"
     )
     async def remover_coins_adm(self, interaction: discord.Interaction, membro: discord.Member, quantidade: int):
-        
         if quantidade <= 0:
             await interaction.response.send_message("❌ Quantidade deve ser maior que 0!", ephemeral=True)
             return
-        
+
         dados = self.obter_dados_usuario(membro.id)
         saldo_anterior = dados["coins"]
-        
+
         if dados["coins"] < quantidade:
             await interaction.response.send_message(
                 f"❌ Saldo insuficiente! {membro.mention} tem apenas {dados['coins']} coins",
                 ephemeral=True
             )
             return
-        
-        dados["coins"] -= quantidade
-        self.salvar_dados()
-        
+
+        if self.use_db:
+            try:
+                row = await users_repo.remove_coins(self.bot.db, membro.id, quantidade)
+                dados["coins"] = row["coins"]
+            except Exception as e:
+                print(f"❌ remove_coins_adm DB falhou: {e}")
+                dados["coins"] -= quantidade
+        else:
+            dados["coins"] -= quantidade
+            self.salvar_dados()
+
         embed = discord.Embed(
             title="✅ Coins Removidas!",
             description=f"**-{quantidade} coins** removidos de {membro.mention}",
@@ -620,12 +728,11 @@ class FenrirCoins(commands.Cog):
         )
         embed.add_field(name="Saldo anterior", value=f"`{saldo_anterior} coins`", inline=True)
         embed.add_field(name="Saldo atual", value=f"`{dados['coins']} coins`", inline=True)
-        
+
         await interaction.response.send_message(embed=embed, ephemeral=True)
-        
         await self.enviar_log(
-            interaction.user.id, 
-            "Admin - Coins Removidas", 
+            interaction.user.id,
+            "Admin - Coins Removidas",
             f"**Ação:** Removeu {quantidade} coins de {membro.mention}\n"
             f"**Saldo anterior:** {saldo_anterior} coins\n"
             f"**Saldo atual:** {dados['coins']} coins",
@@ -640,6 +747,7 @@ class FenrirCoins(commands.Cog):
                 "❌ Você não tem permissão de administrador para usar este comando.",
                 ephemeral=True
             )
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(FenrirCoins(bot))

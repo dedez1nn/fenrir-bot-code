@@ -19,6 +19,23 @@ def bot():
     bot.get_channel = Mock()
     bot.guilds = []  # Evita iteração em tests
     bot.add_view = Mock()
+    bot.config = {"commands_channel_id": 1426205118293868748}  # Mock config
+
+    async def guard_channel_mock(interaction):
+        # Bloqueia se canal errado, permite se admin ou canal correto
+        if interaction.user.guild_permissions.administrator:
+            return False
+        if interaction.channel.id == 1426205118293868748:
+            return False
+        ch = bot.get_channel(1426205118293868748)
+        mention = ch.mention if ch else "<#1426205118293868748>"
+        await interaction.response.send_message(
+            f"❌ Ei, {interaction.user.mention}, use esse **comando** apenas em {mention} !",
+            ephemeral=True
+        )
+        return True
+
+    bot.guard_channel = AsyncMock(side_effect=guard_channel_mock)
     return bot
 
 @pytest.fixture

@@ -13,6 +13,7 @@ def bot():
     bot.get_cog = Mock()
     bot.get_user = Mock()
     bot.get_channel = Mock()
+    bot.config = {"xp_log_channel_id": 1426205118293868748}  # Mock config for modals
     return bot
 
 @pytest.fixture
@@ -44,9 +45,8 @@ def interaction():
 def mock_cooldown_cog():
     mock = AsyncMock()
     mock.registrar_compra = AsyncMock()
-    # Para contornar a falta de await na cog, fazemos o verificar_compra retornar um valor diretamente (não coroutine)
-    mock.verificar_compra = Mock(return_value=False)
-    mock.obter_tempo_restante = Mock(return_value=0)
+    mock.verificar_compra = AsyncMock(return_value=False)
+    mock.obter_tempo_restante = AsyncMock(return_value=0)
     return mock
 
 @pytest.fixture
@@ -81,27 +81,18 @@ class TestCompraCog:
     async def test_registrar_cooldown(self, compra_cog, mock_cooldown_cog):
         compra_cog.bot.get_cog.return_value = mock_cooldown_cog
         await compra_cog.registrar_cooldown(123, 3)
-        # Como a cog não aguarda, a chamada é síncrona
-        mock_cooldown_cog.registrar_compra.assert_called_once_with(123, 3)
+        mock_cooldown_cog.registrar_compra.assert_called_once_with(123, 3, cooldown_secs=None)
 
     @pytest.mark.asyncio
     async def test_registrar_cooldown_sem_cog(self, compra_cog):
         compra_cog.bot.get_cog.return_value = None
         await compra_cog.registrar_cooldown(123, 3)
 
-    # CORREÇÃO: verificar_cooldown_compra também não await na cog.
-    # O método retorna uma coroutine. Para obter o bool, fazemos await duas vezes?
-    # Melhor: no teste, chamamos a função e depois aguardamos a coroutine.
     @pytest.mark.asyncio
     async def test_verificar_cooldown_compra(self, compra_cog, mock_cooldown_cog):
         compra_cog.bot.get_cog.return_value = mock_cooldown_cog
         mock_cooldown_cog.verificar_compra.return_value = True
-        result_coro = await compra_cog.verificar_cooldown_compra(123, 5)
-        # Como a cog retorna coroutine, precisamos aguardar novamente
-        if asyncio.iscoroutine(result_coro):
-            result = await result_coro
-        else:
-            result = result_coro
+        result = await compra_cog.verificar_cooldown_compra(123, 5)
         assert result is True
 
     @pytest.mark.asyncio
@@ -114,8 +105,8 @@ class TestCompraCog:
     @pytest.mark.asyncio
     async def test_processar_compra_com_cooldown(self, compra_cog, interaction, mock_cooldown_cog):
         compra_cog.bot.get_cog.return_value = mock_cooldown_cog
-        mock_cooldown_cog.verificar_compra.return_value = True
-        mock_cooldown_cog.obter_tempo_restante.return_value = 3600
+        mock_cooldown_cog.verificar_compra = AsyncMock(return_value=True)
+        mock_cooldown_cog.obter_tempo_restante = AsyncMock(return_value=3600)
 
         result = await compra_cog.processar_compra(interaction, 1, 123, "Nitro")
         assert result is False
@@ -146,13 +137,13 @@ class TestCompraCog:
     @pytest.mark.asyncio
     async def test_processar_nitro(self, compra_cog, interaction):
         with patch.object(compra_cog, 'enviar_mensagem_ticket', new=AsyncMock()) as mock_enviar:
-            result = await compra_cog.processar_nitro(interaction, "Nitro")
+            result = await compra_cog.processar_nitro(interaction, 123456789, "Nitro", 1)
             assert result is True
             mock_enviar.assert_awaited_once_with(interaction, "Nitro")
 
     @pytest.mark.asyncio
     async def test_processar_roubo_coins(self, compra_cog, interaction):
-        result = await compra_cog.processar_roubo_coins(interaction)
+        result = await compra_cog.processar_roubo_coins(interaction, 123456789, "Roubo de Coins", 3)
         assert result is True
         interaction.response.send_message.assert_called_once()
         assert "✅ **Roubo de Coins Ativado!**" in interaction.response.send_message.call_args[0][0]
@@ -160,7 +151,7 @@ class TestCompraCog:
     @pytest.mark.asyncio
     async def test_processar_dobro_experiencia(self, compra_cog, interaction, mock_xp_cog):
         compra_cog.bot.get_cog.return_value = mock_xp_cog
-        result = await compra_cog.processar_dobro_experiencia(interaction, 123)
+        result = await compra_cog.processar_dobro_experiencia(interaction, 123, "Dobro de XP", 6)
         assert result is True
         mock_xp_cog.ativar_dobro_xp.assert_awaited_once_with(123, 12)
         interaction.response.send_message.assert_called_once()
@@ -169,7 +160,7 @@ class TestCompraCog:
     @pytest.mark.asyncio
     async def test_processar_dobro_experiencia_sem_xp_cog(self, compra_cog, interaction):
         compra_cog.bot.get_cog.return_value = None
-        result = await compra_cog.processar_dobro_experiencia(interaction, 123)
+        result = await compra_cog.processar_dobro_experiencia(interaction, 123, "Dobro de XP", 6)
         assert result is True
         interaction.response.send_message.assert_called_once()
 
@@ -177,7 +168,7 @@ class TestCompraCog:
     async def test_processar_bilheteria(self, compra_cog, interaction, mock_coins_cog):
         compra_cog.bot.get_cog.side_effect = lambda name: mock_coins_cog if name == "FenrirCoins" else None
         with patch('random.randint', return_value=50000):
-            result = await compra_cog.processar_bilheteria(interaction, 123)
+            result = await compra_cog.processar_bilheteria(interaction, 123, "Bilheteria", 10)
             assert result is True
             mock_coins_cog.adicionar_coins.assert_awaited_once_with(123, 50000)
             interaction.response.send_message.assert_called_once()
@@ -202,7 +193,7 @@ class TestCompraCog:
 
     @pytest.mark.asyncio
     async def test_processar_cor_premium(self, compra_cog, interaction):
-        result = await compra_cog.processar_cor_premium(interaction, 123)
+        result = await compra_cog.processar_cor_premium(interaction, 123, "Cor Premium", 11)
         assert result is True
         interaction.response.send_message.assert_called_once()
         view_arg = interaction.response.send_message.call_args[1]['view']
@@ -216,7 +207,7 @@ class TestCompraCog:
         member_mock.add_roles = AsyncMock()
         interaction.guild.get_role.return_value = cargo_mock
         interaction.guild.get_member.return_value = member_mock
-        result = await compra_cog.processar_portao_alcateia(interaction, 123, "Portão")
+        result = await compra_cog.processar_portao_alcateia(interaction, 123, "Portão", 5)
         assert result is True
         member_mock.add_roles.assert_awaited_once_with(cargo_mock)
         interaction.response.send_message.assert_called_once()
@@ -225,20 +216,20 @@ class TestCompraCog:
     async def test_processar_portao_alcateia_falha(self, compra_cog, interaction):
         interaction.guild.get_role.return_value = None
         with patch.object(compra_cog, 'enviar_mensagem_ticket', new=AsyncMock()) as mock_ticket:
-            result = await compra_cog.processar_portao_alcateia(interaction, 123, "Portão")
+            result = await compra_cog.processar_portao_alcateia(interaction, 123, "Portão", 5)
             assert result is False
             mock_ticket.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_processar_enquete(self, compra_cog, interaction):
-        result = await compra_cog.processar_enquete(interaction)
+        result = await compra_cog.processar_enquete(interaction, 123456789, "Enquete", 12)
         assert result is True
         interaction.response.send_message.assert_called_once()
         assert "/criar_enquete" in interaction.response.send_message.call_args[0][0]
 
     @pytest.mark.asyncio
     async def test_processar_fixar_mensagem(self, compra_cog, interaction):
-        result = await compra_cog.processar_fixar_mensagem(interaction)
+        result = await compra_cog.processar_fixar_mensagem(interaction, 123456789, "Fixar Mensagem", 14)
         assert result is True
         interaction.response.send_message.assert_called_once()
         assert "/fixar_mensagem" in interaction.response.send_message.call_args[0][0]

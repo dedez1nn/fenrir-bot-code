@@ -198,21 +198,23 @@ class CompraCog(commands.Cog):
     def get_coins_cog(self):
         return self.bot.get_cog("FenrirCoins")
           
-    async def registrar_cooldown(self, user_id: int, item_id: int):
+    async def registrar_cooldown(
+        self, user_id: int, item_id: int, cooldown_secs: float | None = None
+    ):
         try:
             cooldown_cog = self.get_cooldown_cog()
             if cooldown_cog:
-                await cooldown_cog.registrar_compra(user_id, item_id)
+                await cooldown_cog.registrar_compra(user_id, item_id, cooldown_secs=cooldown_secs)
         except Exception as e:
             print(f"❌ Erro ao registrar cooldown: {e}")
             import traceback
             traceback.print_exc()
-            
+
     async def verificar_cooldown_compra(self, user_id: int, item_id: int) -> bool:
         try:
             cooldown_cog = self.get_cooldown_cog()
             if cooldown_cog:
-                return cooldown_cog.verificar_compra(user_id, item_id)
+                return await cooldown_cog.verificar_compra(user_id, item_id)
             return False
         except Exception as e:
             print(f"❌ Erro ao verificar cooldown: {e}")
@@ -237,15 +239,25 @@ class CompraCog(commands.Cog):
         else:
             await interaction.followup.send(mensagem, ephemeral=True)
         
-    async def processar_compra(self, interaction: discord.Interaction, item_id: int, user_id: int, item_nome: str):
+    async def processar_compra(
+        self,
+        interaction: discord.Interaction,
+        item_id: int,
+        user_id: int,
+        item_nome: str,
+        item_db_id: int | None = None,
+        cooldown_secs: float | None = None,
+    ):
         try:
             print(f"🔍 [DEBUG] Iniciando processar_compra - Item: {item_id}, User: {user_id}")
-            
-            cooldown_ativo = await self.verificar_cooldown_compra(user_id, item_id)
+            # Em DB mode usa o id real do item; em JSON mode usa a posição
+            check_id = item_db_id if item_db_id is not None else item_id
+
+            cooldown_ativo = await self.verificar_cooldown_compra(user_id, check_id)
             if cooldown_ativo:
                 cooldown_cog = self.get_cooldown_cog()
                 if cooldown_cog:
-                    tempo_restante = cooldown_cog.obter_tempo_restante(user_id, item_id)
+                    tempo_restante = await cooldown_cog.obter_tempo_restante(user_id, check_id)
                     if tempo_restante > 0:
                         dias = int(tempo_restante // 86400)
                         horas = int((tempo_restante % 86400) // 3600)
@@ -293,8 +305,8 @@ class CompraCog(commands.Cog):
                 print(f"🔍 [DEBUG] Resultado do processador: {resultado}")
                 
                 if resultado:
-                    print(f"🔍 [DEBUG] Registrando cooldown para user {user_id}, item {item_id}")
-                    await self.registrar_cooldown(user_id, item_id)
+                    print(f"🔍 [DEBUG] Registrando cooldown para user {user_id}, item {check_id}")
+                    await self.registrar_cooldown(user_id, check_id, cooldown_secs=cooldown_secs)
                 return resultado
             else:
                 print(f"🔍 [DEBUG] Nenhum processador encontrado, usando genérico")

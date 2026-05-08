@@ -4,10 +4,14 @@ from discord.ext import commands
 import json
 import os
 import time
+from datetime import datetime, timezone
 from PIL import Image, ImageDraw, ImageFont
 import io
 import requests
 import asyncio
+
+from repositories import users as users_repo
+
 
 class RankingView(discord.ui.View):
     def __init__(self, xp_cog, page=0):
@@ -46,7 +50,7 @@ class RankingView(discord.ui.View):
             secondary_color = (180, 180, 180)
             title_color = (100, 200, 255)
             progress_color = (76, 175, 80)
-            
+
             image = Image.new('RGB', (width, height), background_color)
             draw = ImageDraw.Draw(image)
 
@@ -67,7 +71,7 @@ class RankingView(discord.ui.View):
 
             header_height = 100
             draw.rectangle([0, 0, width, header_height], fill=header_color)
-            
+
             for i in range(10):
                 alpha = i / 10
                 color = (
@@ -78,11 +82,11 @@ class RankingView(discord.ui.View):
                 draw.rectangle([0, header_height - i, width, header_height - i + 1], fill=color)
 
             title_text = "👑 RANKING DE EXPERIÊNCIA"
-            draw.text((width//2, 40), title_text, fill=accent_color, 
+            draw.text((width//2, 40), title_text, fill=accent_color,
                     font=title_font, anchor="mm")
-            
+
             page_text = f"Página {self.page + 1} de {self.total_pages}"
-            draw.text((width//2, 75), page_text, fill=secondary_color, 
+            draw.text((width//2, 75), page_text, fill=secondary_color,
                     font=info_font, anchor="mm")
 
             start_index = self.page * self.users_per_page
@@ -126,7 +130,7 @@ class RankingView(discord.ui.View):
 
                     shadow_rect = [card_rect[0] + 3, card_rect[1] + 3, card_rect[2] + 3, card_rect[3] + 3]
                     draw.rectangle(shadow_rect, fill=(10, 10, 15))
-                    
+
                     draw.rectangle(card_rect, fill=card_color_user, outline=card_border_color, width=3)
 
                     rank_x = left_margin + 40
@@ -134,84 +138,84 @@ class RankingView(discord.ui.View):
 
                     circle_radius = 20
                     draw.ellipse([
-                        rank_x - circle_radius, 
+                        rank_x - circle_radius,
                         rank_y - circle_radius,
-                        rank_x + circle_radius, 
+                        rank_x + circle_radius,
                         rank_y + circle_radius
                     ], fill=rank_color)
 
                     rank_symbol = f"{i}"
-                    draw.text((rank_x, rank_y), rank_symbol, fill=(25, 25, 35), 
+                    draw.text((rank_x, rank_y), rank_symbol, fill=(25, 25, 35),
                             font=rank_font, anchor="mm")
 
                     avatar_x = left_margin + 100
                     avatar_y = y_position + card_height // 2
-                    
+
                     try:
                         avatar_url = user.display_avatar.url
                         response = requests.get(avatar_url, timeout=10)
                         avatar_img = Image.open(io.BytesIO(response.content))
                         avatar_img = avatar_img.resize((avatar_size, avatar_size))
-                        
+
                         mask = Image.new('L', (avatar_size, avatar_size), 0)
                         mask_draw = ImageDraw.Draw(mask)
                         mask_draw.ellipse([0, 0, avatar_size, avatar_size], fill=255)
-                        
+
                         border_size = avatar_size + 4
                         border_mask = Image.new('L', (border_size, border_size), 0)
                         border_draw = ImageDraw.Draw(border_mask)
                         border_draw.ellipse([0, 0, border_size, border_size], fill=255)
-                        
+
                         avatar_with_border = Image.new('RGBA', (border_size, border_size))
                         avatar_with_border.paste(avatar_img, (2, 2), mask)
-                        
-                        image.paste(avatar_with_border, 
-                                (avatar_x - border_size//2, avatar_y - border_size//2), 
+
+                        image.paste(avatar_with_border,
+                                (avatar_x - border_size//2, avatar_y - border_size//2),
                                 avatar_with_border)
-                        
+
                     except Exception as e:
                         draw.ellipse([
-                            avatar_x - avatar_size//2, 
+                            avatar_x - avatar_size//2,
                             avatar_y - avatar_size//2,
-                            avatar_x + avatar_size//2, 
+                            avatar_x + avatar_size//2,
                             avatar_y + avatar_size//2
                         ], fill=(70, 70, 80))
 
                     info_x = left_margin + 140
-                    
+
                     nome = user.display_name
                     if len(nome) > 18:
                         nome = nome[:18] + "..."
-                    
+
                     draw.text((info_x, y_position + 15), nome, fill=text_color, font=name_font)
-                    
+
                     titulo_text = f"« {titulo} »"
                     if len(titulo) > 25:
                         titulo_text = f"« {titulo[:25]}... »"
-                    
+
                     draw.text((info_x, y_position + 40), titulo_text, fill=title_color, font=title_user_font)
-                    
+
                     level_text = f"Nível {nivel} | XP: {xp_atual:,}/{xp_necessario:,}".replace(",", ".")
                     draw.text((info_x, y_position + 60), level_text, fill=secondary_color, font=info_font)
 
                     bar_width = 180
                     bar_height = 12
-                    bar_x = info_x + 250 
+                    bar_x = info_x + 250
                     bar_y = y_position + card_height // 2 - bar_height // 2
-                    
-                    draw.rounded_rectangle([bar_x, bar_y, bar_x + bar_width, bar_y + bar_height], 
+
+                    draw.rounded_rectangle([bar_x, bar_y, bar_x + bar_width, bar_y + bar_height],
                                         radius=6, fill=(50, 50, 60))
 
                     progress_width = int(bar_width * progresso)
                     if progress_width > 0:
-                        draw.rounded_rectangle([bar_x, bar_y, bar_x + progress_width, bar_y + bar_height], 
+                        draw.rounded_rectangle([bar_x, bar_y, bar_x + progress_width, bar_y + bar_height],
                                             radius=6, fill=progress_color)
-                    
+
                     percent_text = f"{progresso*100:.1f}%"
                     percent_x = bar_x + bar_width + 100
                     percent_y = bar_y + bar_height // 2
-                    
-                    draw.text((percent_x, percent_y), percent_text, 
+
+                    draw.text((percent_x, percent_y), percent_text,
                             fill=text_color, font=info_font, anchor="lm")
 
                     xp_restante = xp_necessario - xp_atual
@@ -219,18 +223,18 @@ class RankingView(discord.ui.View):
                         progress_text = f"Faltam {xp_restante:,} XP".replace(",", ".")
                     else:
                         progress_text = "⭐ Nível Máximo!"
-                    
+
                     progress_text_x = percent_x
-                    draw.text((progress_text_x, y_position + 60), progress_text, 
+                    draw.text((progress_text_x, y_position + 60), progress_text,
                             fill=secondary_color, font=small_font, anchor="mm")
 
                     y_position += card_height + card_margin
 
             footer_height = 40
             draw.rectangle([0, height - footer_height, width, height], fill=header_color)
-            
+
             footer_text = "© 2025 ALCATEIA DO FENRIR - SISTEMA DE EXPERIÊNCIA"
-            draw.text((width//2, height - 20), footer_text, 
+            draw.text((width//2, height - 20), footer_text,
                     fill=secondary_color, font=small_font, anchor="mm")
 
             for i in range(5):
@@ -240,13 +244,13 @@ class RankingView(discord.ui.View):
                     int(background_color[1] * (1 - alpha) + 255 * alpha),
                     int(background_color[2] * (1 - alpha) + 255 * alpha)
                 )
-                draw.rectangle([0, header_height + i, width, header_height + i + 1], 
+                draw.rectangle([0, header_height + i, width, header_height + i + 1],
                             fill=color)
 
             img_buffer = io.BytesIO()
             image.save(img_buffer, format='PNG', optimize=True)
             img_buffer.seek(0)
-            
+
             return img_buffer
 
         except Exception as e:
@@ -289,7 +293,7 @@ class RankingView(discord.ui.View):
                 )
                 embed.set_image(url="attachment://ranking.png")
                 embed.set_footer(text="© 2025 ALCATEIA DO FENRIR")
-                
+
                 await interaction.response.edit_message(embed=embed, view=self, attachments=[file])
             else:
                 await interaction.response.send_message("❌ Erro ao gerar ranking.", ephemeral=True)
@@ -305,6 +309,7 @@ class RankingView(discord.ui.View):
         except:
             pass
 
+
 class XPCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -313,18 +318,19 @@ class XPCog(commands.Cog):
         self.xp_data = self.user_data
         self.cooldowns = {}
         self.cooldown_segundos = 10
-        
+        self.use_db = False
+
         self.voice_users = {}
         self.voice_xp_interval = 300
-        self.voice_xp_amount = 15000  
-                
-        self.xp_por_mensagem = 5000  
-        self.xp_por_vitoria = 10000  
-        self.coins_por_mensagem = 2500  
-        self.coins_por_voz = 7500  
-        self.coins_por_vitoria = 20000  
+        self.voice_xp_amount = 15000
+
+        self.xp_por_mensagem = 5000
+        self.xp_por_vitoria = 10000
+        self.coins_por_mensagem = 2500
+        self.coins_por_voz = 7500
+        self.coins_por_vitoria = 20000
         self.bonus_coins_por_nivel = 50000
-        
+
         self.dobro_xp_ativos = {}
 
         _default_roles = {
@@ -342,10 +348,33 @@ class XPCog(commands.Cog):
             {int(k): int(v) for k, v in _role_map.items()}
             if _role_map else _default_roles
         )
-        
+
         self._restaurar_dobro_xp()
         self.voice_check_task = self.bot.loop.create_task(self.voice_xp_loop())
         self.dobro_xp_check_task = self.bot.loop.create_task(self.dobro_xp_loop())
+
+    async def cog_load(self):
+        self.use_db = self.bot.db is not None
+        if self.use_db:
+            try:
+                rows = await users_repo.get_all(self.bot.db)
+                for row in rows:
+                    uid = str(row["user_id"])
+                    self.user_data[uid] = users_repo.row_to_cache(row)
+                self.xp_data = self.user_data
+                self._restaurar_dobro_xp()
+                print(f"⭐ XPCog: {len(rows)} usuários carregados do DB.")
+            except Exception as e:
+                print(f"❌ XPCog: erro ao carregar usuários do DB: {e}")
+                self.use_db = False
+
+        if self.bot.config:
+            self.xp_por_mensagem = self.bot.config.get("xp_por_mensagem") or self.xp_por_mensagem
+            self.voice_xp_amount = self.bot.config.get("xp_por_voz") or self.voice_xp_amount
+            self.voice_xp_interval = self.bot.config.get("voice_xp_interval_s") or self.voice_xp_interval
+            self.bonus_coins_por_nivel = self.bot.config.get("bonus_coins_por_nivel") or self.bonus_coins_por_nivel
+            self.coins_por_mensagem = self.bot.config.get("coins_por_mensagem") or self.coins_por_mensagem
+            self.coins_por_voz = self.bot.config.get("coins_por_voz") or self.coins_por_voz
 
     def _restaurar_dobro_xp(self):
         agora = time.time()
@@ -360,7 +389,6 @@ class XPCog(commands.Cog):
 
     def carregar_dados(self):
         if os.path.exists(self.ARQUIVO_DADOS):
-
             print("carregou os dados")
             with open(self.ARQUIVO_DADOS, "r", encoding="utf-8") as f:
                 dados = json.load(f)
@@ -379,6 +407,8 @@ class XPCog(commands.Cog):
         return {}
 
     def salvar_dados(self):
+        if self.use_db:
+            return
         with open(self.ARQUIVO_DADOS, "w", encoding="utf-8") as f:
             json.dump(self.user_data, f, indent=4)
 
@@ -400,7 +430,7 @@ class XPCog(commands.Cog):
 
     def xp_para_proximo_nivel(self, nivel):
         if nivel == 1:
-            return 300000 
+            return 300000
         elif nivel <= 5:
             return 500000 + (nivel * 200000)
         elif nivel <= 10:
@@ -412,7 +442,7 @@ class XPCog(commands.Cog):
         elif nivel <= 40:
             return 45000000 + ((nivel - 30) * 5000000)
         elif nivel <= 50:
-            return 100000000 + ((nivel - 40) * 10000000) 
+            return 100000000 + ((nivel - 40) * 10000000)
         else:
             base = 200000000
             return base * (2 ** (nivel - 50))
@@ -421,27 +451,39 @@ class XPCog(commands.Cog):
         user_id_str = str(user_id)
         if user_id_str not in self.user_data:
             return 1, 1
-        
+
         premium = self.user_data[user_id_str].get("premium")
-        
+
         multiplicadores = {
             "aventureiro": (2, 2),
             "lendario": (4, 4),
             "mitico": (6, 6)
         }
-        
+
         return multiplicadores.get(premium, (1, 1))
+
+    async def _persistir_xp(self, user_id, dados: dict) -> None:
+        """Persiste xp/nivel no DB ou JSON conforme o modo ativo."""
+        if self.use_db:
+            try:
+                await users_repo.update_xp_nivel(
+                    self.bot.db, int(user_id), int(dados["xp"]), int(dados["nivel"])
+                )
+            except Exception as e:
+                print(f"❌ update_xp_nivel DB falhou: {e}")
+        else:
+            self.salvar_dados()
 
     async def adicionar_xp_sem_multiplo(self, user_id, xp_ganho, reason="Sistema"):
         user_id_str = str(user_id)
         dados = self.obter_dados_usuario(user_id_str)
         nivel_anterior = dados["nivel"]
-        
+
         dados["xp"] += xp_ganho
-        
+
         subiu_nivel = False
         niveis_ganhos = 0
-        
+
         while dados["xp"] >= self.xp_para_proximo_nivel(dados["nivel"]):
             dados["xp"] -= self.xp_para_proximo_nivel(dados["nivel"])
             dados["nivel"] += 1
@@ -452,7 +494,7 @@ class XPCog(commands.Cog):
             user = self.bot.get_user(int(user_id))
             if user:
                 canal_xp = self.bot.get_channel(self.bot.config.get("levelup_channel_id") if self.bot.config else None)
-                
+
                 coins_ganhos = 0
                 bonus_info = []
                 for nivel in range(nivel_anterior + 1, nivel_anterior + niveis_ganhos + 1):
@@ -460,13 +502,13 @@ class XPCog(commands.Cog):
                         bonus_coins = (nivel // 5) * self.bonus_coins_por_nivel
                         coins_ganhos += bonus_coins
                         bonus_info.append(f"Nível {nivel}: +{bonus_coins} coins")
-                
+
                 if coins_ganhos > 0:
                     try:
                         coins_cog = self.bot.get_cog("FenrirCoins")
                         if coins_cog:
                             await coins_cog.adicionar_coins_sem_multiplo(user_id, coins_ganhos, f"Bonus por alcançar nível {dados['nivel']}")
-                            
+
                             canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
                             if canal_log:
                                 embed_log = discord.Embed(
@@ -480,10 +522,10 @@ class XPCog(commands.Cog):
                                 embed_log.set_thumbnail(url=user.display_avatar.url)
                                 embed_log.set_footer(text=user.id)
                                 await canal_log.send(embed=embed_log)
-                                
+
                     except Exception as e:
                         print(f"❌ Erro ao adicionar coins: {e}")
-                        
+
                 embed = discord.Embed(
                     title="🎉 UP de nível!",
                     description=f"**Parabéns**, {user.mention}!\n"
@@ -500,17 +542,17 @@ class XPCog(commands.Cog):
                             f"*{' + '.join([f'Nv{5*i}' for i in range(1, (dados['nivel']//5)+1) if 5*i > nivel_anterior and 5*i <= dados['nivel']])}*",
                         inline=False
                     )
-                
+
                 embed.set_thumbnail(url=user.display_avatar.url)
                 embed.set_image(url="https://cdn.discordapp.com/attachments/1288876556898275328/1431319875820720190/Lobo_Cientista_e_Tubo_de_Ensaio.png?ex=68fcfc03&is=68fbaa83&hm=adb72502bfa44cda2ba75ae2b41806e46aaccca1122d4426881944550f197d3a&")
-                
+
                 xp_proximo = self.xp_para_proximo_nivel(dados["nivel"])
                 embed.add_field(
                     name="📊 Progresso",
                     value=f"**XP Atual:** {dados['xp']}/{xp_proximo}",
                     inline=True
                 )
-                
+
                 try:
                     if canal_xp:
                         await canal_xp.send(embed=embed)
@@ -523,14 +565,14 @@ class XPCog(commands.Cog):
                     if member:
                         await self.atualizar_cargos(member, dados["nivel"], canal_xp)
 
-        self.salvar_dados()
+        await self._persistir_xp(user_id, dados)
         return subiu_nivel
 
     async def adicionar_xp(self, user_id, xp_ganho=None, reason="Sistema"):
         user_id_str = str(user_id)
         dados = self.obter_dados_usuario(user_id_str)
         nivel_anterior = dados["nivel"]
-        
+
         if xp_ganho is None:
             if "mensagem" in reason.lower():
                 xp_ganho = self.xp_por_mensagem
@@ -538,27 +580,25 @@ class XPCog(commands.Cog):
                 xp_ganho = self.voice_xp_amount
             elif "vitória" in reason.lower():
                 xp_ganho = self.xp_por_vitoria
-        
+
         guild_cog = self.bot.get_cog("GuildSystem")
         multiplicador_guild = 1.0
-        
-        
+
         if guild_cog and "guild" in dados and dados["guild"]:
             multiplicador_guild = guild_cog.calcular_multiplicador_guild(dados["guild"])
             print(f"   Multiplicador Guild: {multiplicador_guild}x")
         else:
             print(f"   ❌ Sem guild ou GuildSystem não carregado")
-        
+
         multiplicador_xp_premium, multiplicador_coins_premium = self.calcular_multiplicador_premium(user_id)
         multiplicador_dobro = 2 if self.verificar_dobro_xp(user_id) else 1
-        
+
         bonus_guild_xp = multiplicador_guild - 1
         bonus_premium_xp = multiplicador_xp_premium - 1
         bonus_dobro_xp = multiplicador_dobro - 1
-        
+
         multiplicador_total_xp = 1 + bonus_guild_xp + bonus_premium_xp + bonus_dobro_xp
-        
-        xp_base = xp_ganho
+
         xp_ganho = xp_ganho * multiplicador_total_xp
 
         coins_por_atividade = 0
@@ -568,17 +608,17 @@ class XPCog(commands.Cog):
             coins_por_atividade = self.coins_por_voz
         elif "vitória" in reason.lower():
             coins_por_atividade = self.coins_por_vitoria
-                
+
         if coins_por_atividade > 0:
             coins_cog = self.bot.get_cog("FenrirCoins")
             if coins_cog:
                 await coins_cog.adicionar_coins(user_id, coins_por_atividade, reason)
 
         dados["xp"] += xp_ganho
-        
+
         subiu_nivel = False
         niveis_ganhos = 0
-        
+
         while dados["xp"] >= self.xp_para_proximo_nivel(dados["nivel"]):
             dados["xp"] -= self.xp_para_proximo_nivel(dados["nivel"])
             dados["nivel"] += 1
@@ -589,7 +629,7 @@ class XPCog(commands.Cog):
             user = self.bot.get_user(int(user_id))
             if user:
                 canal_xp = self.bot.get_channel(self.bot.config.get("levelup_channel_id") if self.bot.config else None)
-                
+
                 coins_ganhos = 0
                 bonus_info = []
                 for nivel in range(nivel_anterior + 1, nivel_anterior + niveis_ganhos + 1):
@@ -597,13 +637,13 @@ class XPCog(commands.Cog):
                         bonus_coins = (nivel // 5) * self.bonus_coins_por_nivel
                         coins_ganhos += bonus_coins
                         bonus_info.append(f"Nível {nivel}: +{bonus_coins} coins")
-                
+
                 if coins_ganhos > 0:
                     try:
                         coins_cog = self.bot.get_cog("FenrirCoins")
                         if coins_cog:
                             await coins_cog.adicionar_coins_sem_multiplo(user_id, coins_ganhos, f"Bonus por alcançar nível {dados['nivel']}")
-                            
+
                             canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
                             if canal_log:
                                 embed_log = discord.Embed(
@@ -617,10 +657,10 @@ class XPCog(commands.Cog):
                                 embed_log.set_thumbnail(url=user.display_avatar.url)
                                 embed_log.set_footer(text=user.id)
                                 await canal_log.send(embed=embed_log)
-                                
+
                     except Exception as e:
                         print(f"❌ Erro ao adicionar coins: {e}")
-                        
+
                 embed = discord.Embed(
                     title="🎉 UP de nível!",
                     description=f"**Parabéns**, {user.mention}!\n"
@@ -637,16 +677,16 @@ class XPCog(commands.Cog):
                             f"*{' + '.join([f'Nv{5*i}' for i in range(1, (dados['nivel']//5)+1) if 5*i > nivel_anterior and 5*i <= dados['nivel']])}*",
                         inline=False
                     )
-                
+
                 embed.set_thumbnail(url=user.display_avatar.url)
-                
+
                 xp_proximo = self.xp_para_proximo_nivel(dados["nivel"])
                 embed.add_field(
                     name="📊 Progresso",
                     value=f"**XP Atual:** {dados['xp']}/{xp_proximo}",
                     inline=True
                 )
-                
+
                 try:
                     if canal_xp:
                         await canal_xp.send(embed=embed)
@@ -659,9 +699,9 @@ class XPCog(commands.Cog):
                     if member:
                         await self.atualizar_cargos(member, dados["nivel"], canal_xp)
 
-        self.salvar_dados()
+        await self._persistir_xp(user_id, dados)
         return subiu_nivel
-    
+
     async def atualizar_cargos(self, member, nivel, canal_xp=None):
         try:
             cargos_para_adicionar = []
@@ -669,17 +709,17 @@ class XPCog(commands.Cog):
 
             cargo_atual = None
             nivel_atual = 0
-            
+
             for nivel_requerido, cargo_id in self.cargos_por_nivel.items():
                 cargo = member.guild.get_role(cargo_id)
                 if not cargo:
                     print(f"❌ Cargo com ID {cargo_id} não encontrado no servidor")
                     continue
-                
+
                 if cargo in member.roles and nivel_requerido > nivel_atual:
                     cargo_atual = cargo
                     nivel_atual = nivel_requerido
-                
+
                 if nivel >= nivel_requerido:
                     if cargo not in member.roles:
                         cargos_para_adicionar.append(cargo)
@@ -733,14 +773,21 @@ class XPCog(commands.Cog):
             user_id_str = str(user_id)
             agora = time.time()
             expiracao = agora + (duracao_horas * 3600)
-            
+
             self.dobro_xp_ativos[user_id_str] = expiracao
 
             dados = self.obter_dados_usuario(user_id_str)
             dados["dobro"] = True
             dados["dobro_expiracao"] = expiracao
 
-            self.salvar_dados()
+            if self.use_db:
+                try:
+                    expiracao_dt = datetime.fromtimestamp(expiracao, tz=timezone.utc)
+                    await users_repo.set_dobro(self.bot.db, user_id, True, expiracao_dt)
+                except Exception as e:
+                    print(f"❌ set_dobro DB falhou: {e}")
+            else:
+                self.salvar_dados()
 
             canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
             user = self.bot.get_user(user_id)
@@ -758,10 +805,10 @@ class XPCog(commands.Cog):
                 )
                 embed_log.set_thumbnail(url=user.display_avatar.url)
                 await canal_log.send(embed=embed_log)
-            
+
             print(f"✅ Dobro de XP ativado para {user_id} por {duracao_horas}h (expira em {expiracao})")
             return True
-            
+
         except Exception as e:
             print(f"❌ Erro ao ativar dobro de XP: {e}")
             return False
@@ -785,15 +832,22 @@ class XPCog(commands.Cog):
             try:
                 agora = time.time()
                 expirados = []
-                
+
                 for user_id_str, expiracao in self.dobro_xp_ativos.items():
                     if agora >= expiracao:
                         expirados.append(user_id_str)
                         if user_id_str in self.user_data:
                             self.user_data[user_id_str]["dobro"] = False
-                
+
                 for user_id_str in expirados:
                     del self.dobro_xp_ativos[user_id_str]
+
+                    if self.use_db:
+                        try:
+                            await users_repo.set_dobro(self.bot.db, int(user_id_str), False, None)
+                        except Exception as e:
+                            print(f"❌ set_dobro (expiração) DB falhou: {e}")
+
                     user_id = int(user_id_str)
                     user = self.bot.get_user(user_id)
                     if user:
@@ -806,13 +860,15 @@ class XPCog(commands.Cog):
                             await user.send(embed=embed)
                         except:
                             pass
-                
-                if expirados:
+
+                if expirados and not self.use_db:
                     self.salvar_dados()
+
+                if expirados:
                     print(f"🔄 Dobro de XP expirado para {len(expirados)} usuários")
-                
+
                 await asyncio.sleep(300)
-                
+
             except Exception as e:
                 print(f"❌ Erro no dobro_xp_loop: {e}")
                 await asyncio.sleep(60)
@@ -830,10 +886,10 @@ class XPCog(commands.Cog):
                         if member and member.voice and member.voice.channel:
                             if member.voice.channel.id == (self.bot.config.get("afk_voice_channel_id") if self.bot.config else None):
                                 continue
-                    
+
                     join_time = data["join_time"]
                     last_xp_time = data.get("last_xp_time", join_time)
-                    
+
                     if agora - last_xp_time >= self.voice_xp_interval:
                         self.voice_users[user_id]["last_xp_time"] = agora
 
@@ -849,7 +905,7 @@ class XPCog(commands.Cog):
                     for user, xp_ganho, xp_total in usuarios_que_ganharam:
                         status_dobro = " (DOBRO DE XP!)" if self.verificar_dobro_xp(user.id) else ""
                         descricao_lines.append(f"• {user.mention} ganhou {xp_ganho} XP{status_dobro} | Total: {xp_total} XP")
-                    
+
                     embed_log = discord.Embed(
                         title="🌟 Ganho de Experiência por Voz",
                         description="\n".join(descricao_lines),
@@ -863,7 +919,7 @@ class XPCog(commands.Cog):
             except Exception as e:
                 print(f"Erro no voice_xp_loop: {e}")
                 await asyncio.sleep(60)
-                
+
     @commands.Cog.listener()
     async def on_member_update(self, antes: discord.Member, depois: discord.Member):
         if not antes.premium_since and depois.premium_since:
@@ -872,7 +928,7 @@ class XPCog(commands.Cog):
                 if coins_cog:
                     await coins_cog.adicionar_coins(depois.id, 10000, "Boost no Servidor")
                 await self.adicionar_xp(depois.id, 100, "Boost no Servidor")
-                
+
                 embed = discord.Embed(
                     title="💎 Obrigado pelo Boost!",
                     description=(
@@ -897,18 +953,18 @@ class XPCog(commands.Cog):
                 await depois.send(embed=embed)
             except discord.Forbidden:
                 pass
-            
+
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
         if member.bot:
             return
-        
+
         if after.channel and after.channel.id == (self.bot.config.get("afk_voice_channel_id") if self.bot.config else None):
             return
-        
+
         if before.channel and before.channel.id == (self.bot.config.get("afk_voice_channel_id") if self.bot.config else None):
             return
-            
+
         user_id = str(member.id)
         agora = time.time()
 
@@ -919,12 +975,12 @@ class XPCog(commands.Cog):
                 "channel_id": after.channel.id
             }
             print(f"🎧 {member.name} entrou no canal de voz")
-        
+
         elif before.channel and not after.channel:
             if user_id in self.voice_users:
                 del self.voice_users[user_id]
                 print(f"🎧 {member.name} saiu do canal de voz")
-        
+
         elif before.channel and after.channel and before.channel != after.channel:
             if user_id in self.voice_users:
                 self.voice_users[user_id]["channel_id"] = after.channel.id
@@ -944,11 +1000,11 @@ class XPCog(commands.Cog):
         self.cooldowns[user_id] = agora
 
         await self.adicionar_xp(user_id, reason="Mensagem no chat")
-        
+
         canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
-        
+
         status_dobro = " (DOBRO DE XP ATIVO!)" if self.verificar_dobro_xp(message.author.id) else ""
-        
+
         embed_log = discord.Embed(
             title="🌟 Ganho de Experiência",
             description=(
@@ -968,43 +1024,52 @@ class XPCog(commands.Cog):
         try:
             if await self.bot.guard_channel(interaction):
                 return
-            
+
             await interaction.response.defer(ephemeral=True)
-            
+
             membro = membro or interaction.user
-            user_id = str(membro.id)
-            dados = self.user_data.get(user_id, {"xp": 0, "nivel": 1, "titulo": "Aprendiz"})
+
+            if self.use_db:
+                try:
+                    row = await users_repo.get_or_create(self.bot.db, membro.id)
+                    dados = users_repo.row_to_cache(row)
+                    self.user_data[str(membro.id)] = dados
+                except Exception:
+                    dados = self.user_data.get(str(membro.id), {"xp": 0, "nivel": 1, "titulo": "Aprendiz"})
+            else:
+                dados = self.user_data.get(str(membro.id), {"xp": 0, "nivel": 1, "titulo": "Aprendiz"})
+
             nivel = dados["nivel"]
             xp_atual = dados["xp"]
             xp_proximo = self.xp_para_proximo_nivel(nivel)
-        
+
             embed = discord.Embed(
                 title=f"📊 XP de {membro.display_name}",
                 description=f"**Nível:** {nivel}\n**XP:** {xp_atual}/{xp_proximo}",
                 color=discord.Color.blue()
             )
             embed.set_thumbnail(url=membro.display_avatar.url)
-            
+
             if "titulo" in dados:
                 embed.add_field(name="🏷️ Título", value=dados["titulo"], inline=True)
-            
+
             premium = dados.get("premium")
             if premium:
                 multiplicador_xp, multiplicador_coins = self.calcular_multiplicador_premium(membro.id)
                 embed.add_field(name="💎 Premium", value=f"{premium.title()} ({multiplicador_xp}x XP / {multiplicador_coins}x coins)", inline=True)
-            
+
             if self.verificar_dobro_xp(membro.id):
                 embed.add_field(name="🚀 Status", value="Dobro de XP ATIVO!", inline=True)
-            
-            if user_id in self.voice_users:
-                tempo_em_voz = time.time() - self.voice_users[user_id]["join_time"]
+
+            if str(membro.id) in self.voice_users:
+                tempo_em_voz = time.time() - self.voice_users[str(membro.id)]["join_time"]
                 minutos = int(tempo_em_voz // 60)
                 embed.add_field(
                     name="🎧 Tempo em Voz",
                     value=f"{minutos} minutos",
                     inline=True
                 )
-            
+
             try:
                 canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
                 if canal_log:
@@ -1019,14 +1084,14 @@ class XPCog(commands.Cog):
                     await canal_log.send(embed=embed_log)
             except Exception as log_error:
                 print(f"Erro no log: {log_error}")
-            
+
             await interaction.followup.send(embed=embed, ephemeral=True)
-            
+
         except Exception as e:
             print(f"Erro no comando xp: {e}")
             try:
                 await interaction.followup.send(
-                    "❌ Ocorreu um erro ao processar o comando. Tente novamente.", 
+                    "❌ Ocorreu um erro ao processar o comando. Tente novamente.",
                     ephemeral=True
                 )
             except:
@@ -1037,19 +1102,19 @@ class XPCog(commands.Cog):
         try:
             if await self.bot.guard_channel(interaction):
                 return
-            
+
             await interaction.response.defer(ephemeral=True)
-            
+
             user_id = str(interaction.user.id)
-            
+
             embed = discord.Embed(
                 title="🚀 Status do Dobro de XP",
                 color=discord.Color.gold()
             )
-            
+
             premium = self.user_data.get(user_id, {}).get("premium")
             multiplicador_xp_premium, multiplicador_coins_premium = self.calcular_multiplicador_premium(interaction.user.id)
-            
+
             if self.verificar_dobro_xp(interaction.user.id):
                 expiracao = self.dobro_xp_ativos.get(user_id)
                 if expiracao:
@@ -1089,15 +1154,15 @@ class XPCog(commands.Cog):
                         "💎 Compre na loja para ativar o dobro de XP por 12 horas!\n"
                         "Use `/loja` para ver os itens disponíveis."
                     )
-            
+
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
             await interaction.followup.send(embed=embed, ephemeral=True)
-            
+
         except Exception as e:
             print(f"Erro no comando status_dobro_xp: {e}")
             try:
                 await interaction.followup.send(
-                    "❌ Ocorreu um erro ao processar o comando. Tente novamente.", 
+                    "❌ Ocorreu um erro ao processar o comando. Tente novamente.",
                     ephemeral=True
                 )
             except:
@@ -1113,32 +1178,38 @@ class XPCog(commands.Cog):
         try:
             if await self.bot.guard_channel(interaction):
                 return
-            
+
             user_id_str = str(membro.id)
-            
+
             if user_id_str not in self.user_data:
                 self.user_data[user_id_str] = {
-                    "xp": 0, 
-                    "nivel": 1, 
-                    "titulo": titulo, 
+                    "xp": 0,
+                    "nivel": 1,
+                    "titulo": titulo,
                     "dobro": False,
                     "premium": None
                 }
             else:
                 self.user_data[user_id_str]["titulo"] = titulo
-            
-            self.salvar_dados()
-            
+
+            if self.use_db:
+                try:
+                    await users_repo.set_titulo(self.bot.db, membro.id, titulo)
+                except Exception as e:
+                    print(f"❌ set_titulo DB falhou: {e}")
+            else:
+                self.salvar_dados()
+
             await interaction.response.send_message(
                 f"✅ **Título configurado!**\n"
                 f"**{membro.mention}** agora tem o título: **{titulo}**",
                 ephemeral=True
             )
-            
+
         except Exception as e:
             print(f"Erro no comando set_titulo: {e}")
             await interaction.response.send_message(
-                "❌ Ocorreu um erro ao processar o comando.", 
+                "❌ Ocorreu um erro ao processar o comando.",
                 ephemeral=True
             )
 
@@ -1158,22 +1229,29 @@ class XPCog(commands.Cog):
         try:
             if await self.bot.guard_channel(interaction):
                 return
-            
+
             user_id_str = str(membro.id)
-            
+            premium_valor = None if plano == "none" else plano
+
             if user_id_str not in self.user_data:
                 self.user_data[user_id_str] = {
-                    "xp": 0, 
-                    "nivel": 1, 
-                    "titulo": "Aprendiz", 
+                    "xp": 0,
+                    "nivel": 1,
+                    "titulo": "Aprendiz",
                     "dobro": False,
-                    "premium": None if plano == "none" else plano
+                    "premium": premium_valor
                 }
             else:
-                self.user_data[user_id_str]["premium"] = None if plano == "none" else plano
-            
-            self.salvar_dados()
-            
+                self.user_data[user_id_str]["premium"] = premium_valor
+
+            if self.use_db:
+                try:
+                    await users_repo.set_premium(self.bot.db, membro.id, premium_valor, None)
+                except Exception as e:
+                    print(f"❌ set_premium DB falhou: {e}")
+            else:
+                self.salvar_dados()
+
             if plano == "none":
                 await interaction.response.send_message(
                     f"✅ **Premium removido!**\n"
@@ -1188,11 +1266,11 @@ class XPCog(commands.Cog):
                     f"**Multiplicadores:** {multiplicador_xp}x XP / {multiplicador_coins}x coins",
                     ephemeral=True
                 )
-                
+
         except Exception as e:
             print(f"Erro no comando set_premium: {e}")
             await interaction.response.send_message(
-                "❌ Ocorreu um erro ao processar o comando.", 
+                "❌ Ocorreu um erro ao processar o comando.",
                 ephemeral=True
             )
 
@@ -1202,7 +1280,7 @@ class XPCog(commands.Cog):
         try:
             if await self.bot.guard_channel(interaction):
                 return
-            
+
             for user_id, dados in self.user_data.items():
                 try:
                     membro = interaction.guild.get_member(int(user_id))
@@ -1215,13 +1293,18 @@ class XPCog(commands.Cog):
                 except Exception as e:
                     print(f"Erro ao processar membro {user_id}: {e}")
 
-            self.user_data = {}
-            self.salvar_dados()
-            
+            if self.use_db:
+                try:
+                    await users_repo.reset_xp_all(self.bot.db)
+                except Exception as e:
+                    print(f"❌ reset_xp_all DB falhou: {e}")
+
+            self.user_data.clear()
+
             canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
             embed_log = discord.Embed(
                 title="🔔 Remoção de Experiência Geral",
-                description= f"\n\nO Administrador {interaction.user.mention} zerou o XP de todos!\n"
+                description=f"\n\nO Administrador {interaction.user.mention} zerou o XP de todos!\n"
                              f"Todo o banco de dados de XP foi limpo.",
                 color=discord.Color.dark_red(),
                 timestamp=discord.utils.utcnow()
@@ -1235,14 +1318,14 @@ class XPCog(commands.Cog):
                 "Todos os cargos do sistema de XP foram removidos.",
                 ephemeral=True
             )
-            
+
         except Exception as e:
             print(f"Erro no comando reset-xp-all: {e}")
             await interaction.response.send_message(
-                "❌ Ocorreu um erro ao processar o comando.", 
+                "❌ Ocorreu um erro ao processar o comando.",
                 ephemeral=True
             )
-        
+
     @app_commands.command(name="reset-xp", description="Zerar o XP do membro selecionado (ADM)")
     @app_commands.checks.has_permissions(administrator=True)
     async def reset_xp(self, interaction: discord.Interaction, membro: discord.Member):
@@ -1252,7 +1335,15 @@ class XPCog(commands.Cog):
                 nivel_antes = self.user_data[user_id]["nivel"]
                 self.user_data[user_id]["xp"] = 0
                 self.user_data[user_id]["nivel"] = 1
-                self.salvar_dados()
+
+                if self.use_db:
+                    try:
+                        await users_repo.reset_xp_one(self.bot.db, membro.id)
+                    except Exception as e:
+                        print(f"❌ reset_xp_one DB falhou: {e}")
+                else:
+                    self.salvar_dados()
+
                 await interaction.response.send_message(f"✅ XP de {membro.mention} foi zerado!", ephemeral=True)
 
                 for nivel_requerido, cargo_id in self.cargos_por_nivel.items():
@@ -1260,11 +1351,11 @@ class XPCog(commands.Cog):
                         cargo = interaction.guild.get_role(cargo_id)
                         if cargo and cargo in membro.roles:
                             await membro.remove_roles(cargo, reason="Reset de XP")
-                            
+
                 canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
                 embed_log = discord.Embed(
                     title="🔔 Remoção de Experiência",
-                    description= f"\n\nO Administrador {interaction.user.mention}\n"
+                    description=f"\n\nO Administrador {interaction.user.mention}\n"
                                 f"**resetou** todo o XP de {membro.mention}**\n",
                     color=discord.Color.dark_red(),
                     timestamp=discord.utils.utcnow()
@@ -1272,14 +1363,14 @@ class XPCog(commands.Cog):
                 embed_log.set_thumbnail(url=interaction.user.display_avatar.url)
                 embed_log.set_footer(text=interaction.user.id)
                 await canal_log.send(embed=embed_log)
-                
+
             else:
                 await interaction.response.send_message(f"{membro.mention} não possui XP registrado.", ephemeral=True)
-                
+
         except Exception as e:
             print(f"Erro no comando reset-xp: {e}")
             await interaction.response.send_message(
-                "❌ Ocorreu um erro ao processar o comando.", 
+                "❌ Ocorreu um erro ao processar o comando.",
                 ephemeral=True
             )
 
@@ -1293,7 +1384,7 @@ class XPCog(commands.Cog):
         try:
             if await self.bot.guard_channel(interaction):
                 return
-            
+
             user_id = str(membro.id)
 
             if user_id not in self.user_data:
@@ -1306,9 +1397,9 @@ class XPCog(commands.Cog):
 
             dados = self.user_data[user_id]
             nivel_anterior = dados["nivel"]
-            
+
             dados["xp"] -= quantidade
-            
+
             while dados["xp"] < 0 and dados["nivel"] > 1:
                 dados["nivel"] -= 1
                 dados["xp"] += self.xp_para_proximo_nivel(dados["nivel"])
@@ -1319,12 +1410,12 @@ class XPCog(commands.Cog):
             if dados["nivel"] != nivel_anterior:
                 await self.atualizar_cargos(membro, dados["nivel"], interaction.channel)
 
-            self.salvar_dados()
-            
+            await self._persistir_xp(user_id, dados)
+
             canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
             embed_log = discord.Embed(
                 title="🔔 Remoção de Experiência",
-                description= f"\n\nO Administrador {interaction.user.mention}\n"
+                description=f"\n\nO Administrador {interaction.user.mention}\n"
                              f"retirou **{quantidade} de XP de {membro.mention}**\n"
                              f"Novo XP de {membro.name}: **{dados['xp']}**",
                 color=discord.Color.dark_red(),
@@ -1339,14 +1430,14 @@ class XPCog(commands.Cog):
                 f"{membro.mention} agora está no **nível {dados['nivel']}** com **{dados['xp']} XP**.",
                 ephemeral=True
             )
-            
+
         except Exception as e:
             print(f"Erro no comando retirar-xp: {e}")
             await interaction.response.send_message(
-                "❌ Ocorreu um erro ao processar o comando.", 
+                "❌ Ocorreu um erro ao processar o comando.",
                 ephemeral=True
             )
-            
+
     @app_commands.command(name="adicionar-xp", description="Adicionar XP a um membro (ADM)")
     @app_commands.checks.has_permissions(administrator=True)
     @app_commands.describe(
@@ -1398,14 +1489,14 @@ class XPCog(commands.Cog):
         try:
             if await self.bot.guard_channel(interaction):
                 return
-            
+
             if intervalo < 1 or xp_quantidade < 1:
                 await interaction.response.send_message("❌ Intervalo e XP devem ser maiores que 0.", ephemeral=True)
                 return
-                
+
             self.voice_xp_interval = intervalo * 60
             self.voice_xp_amount = xp_quantidade
-            
+
             await interaction.response.send_message(
                 f"✅ **Configuração de XP por voz atualizada!**\n"
                 f"**Intervalo:** {intervalo} minutos\n"
@@ -1413,11 +1504,11 @@ class XPCog(commands.Cog):
                 f"**Usuários ativos em voz:** {len(self.voice_users)}",
                 ephemeral=True
             )
-            
+
         except Exception as e:
             print(f"Erro no comando config_voz: {e}")
             await interaction.response.send_message(
-                "❌ Ocorreu um erro ao processar o comando.", 
+                "❌ Ocorreu um erro ao processar o comando.",
                 ephemeral=True
             )
 
@@ -1426,26 +1517,26 @@ class XPCog(commands.Cog):
         try:
             if await self.bot.guard_channel(interaction):
                 return
-            
+
             embed = discord.Embed(
                 title="🎧 Status do Sistema de Voz",
                 color=discord.Color.blue()
             )
-            
+
             embed.add_field(
                 name="⚙️ Configurações",
                 value=f"**Intervalo:** {self.voice_xp_interval // 60} minutos\n"
                       f"**XP por intervalo:** {self.voice_xp_amount} pontos",
                 inline=False
             )
-            
+
             embed.add_field(
                 name="📊 Estatísticas",
                 value=f"**Usuários em voz:** {len(self.voice_users)}\n"
                       f"**XP total distribuído:** {sum(dados['xp'] for dados in self.user_data.values())}",
                 inline=False
             )
-            
+
             if self.voice_users:
                 users_list = []
                 for user_id, data in list(self.voice_users.items())[:5]:
@@ -1453,19 +1544,19 @@ class XPCog(commands.Cog):
                     if user:
                         tempo = int((time.time() - data['join_time']) // 60)
                         users_list.append(f"• {user.display_name} ({tempo} min)")
-                
+
                 embed.add_field(
                     name="👥 Usuários Ativos",
                     value="\n".join(users_list),
                     inline=False
                 )
-            
+
             await interaction.response.send_message(embed=embed, ephemeral=True)
-            
+
         except Exception as e:
             print(f"Erro no comando status_voz: {e}")
             await interaction.response.send_message(
-                "❌ Ocorreu um erro ao processar o comando.", 
+                "❌ Ocorreu um erro ao processar o comando.",
                 ephemeral=True
             )
 
@@ -1474,20 +1565,20 @@ class XPCog(commands.Cog):
         try:
             if await self.bot.guard_channel(interaction):
                 return
-            
+
             if not self.user_data:
                 await interaction.response.send_message("❌ Nenhum dado de XP encontrado.", ephemeral=True)
                 return
 
             await interaction.response.defer(thinking=True)
-            
+
             view = RankingView(self)
             img_buffer = await view.create_ranking_image()
-            
+
             if img_buffer is None:
                 await interaction.followup.send("❌ Erro ao gerar a imagem do ranking.", ephemeral=True)
                 return
-            
+
             file = discord.File(img_buffer, filename="ranking.png")
             embed = discord.Embed(
                 title="👑 Ranking de Experiência",
@@ -1496,7 +1587,7 @@ class XPCog(commands.Cog):
             )
             embed.set_image(url="attachment://ranking.png")
             embed.set_footer(text="© 2025 ALCATEIA DO FENRIR")
-            
+
             try:
                 canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
                 if canal_log:
@@ -1511,11 +1602,11 @@ class XPCog(commands.Cog):
                     await canal_log.send(embed=embed_log)
             except Exception as log_error:
                 print(f"Erro no log: {log_error}")
-            
+
             view.update_buttons()
             await interaction.followup.send(embed=embed, view=view, file=file)
             view.message = await interaction.original_response()
-            
+
         except Exception as e:
             print(f"Erro no comando ranking: {e}")
             await interaction.followup.send("❌ Ocorreu um erro ao gerar o ranking.", ephemeral=True)
@@ -1526,6 +1617,7 @@ class XPCog(commands.Cog):
             self.voice_check_task.cancel()
         if hasattr(self, 'dobro_xp_check_task'):
             self.dobro_xp_check_task.cancel()
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(XPCog(bot))

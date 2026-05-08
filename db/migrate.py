@@ -250,6 +250,9 @@ async def import_legacy_json(pool, *, force: bool = False) -> Dict[str, int]:
         # items
         if force or await _table_is_empty(conn, "items"):
             data = _load_json(_DATA_DIR / "loja_data.json")
+            # loja_data.json pode ser {"itens": [...], "proximo_id": N} ou uma lista direta
+            if isinstance(data, dict):
+                data = data.get("itens", [])
             if isinstance(data, list) and data:
                 counters["items"] = await _import_items(conn, data)
                 log.info("Importados %s items de loja_data.json", counters["items"])

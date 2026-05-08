@@ -43,7 +43,7 @@ Copy `.env.example` to `.env` and fill in:
 - `POSTGRES_PASSWORD` — Postgres password
 - `DATABASE_URL` — connection string. In docker-compose the host is `postgres`; for `python main.py` against a locally-exposed Postgres, use `localhost:5432`.
 
-The bot **does not crash if Postgres is unavailable** — it logs a warning and operates in legacy-JSON mode. This compatibility window will close after Phase 4.
+The bot **does not crash if Postgres is unavailable** — it logs a warning and operates in legacy-JSON mode. `user_data.json`, `loja_data.json`, and `cooldowns_data.json` are now fallback-only (Phases 3–4 done). `guilds_data.json` and `aventuras_data.json` remain primary until Phase 6.
 
 ## Architecture
 
@@ -52,7 +52,7 @@ The bot **does not crash if Postgres is unavailable** — it logs a warning and 
 2. Walks `cogs/` and loads extensions. **The walker has special handling for cog-packages**: if a directory has `__init__.py` defining `setup()` (e.g. `cogs/antispam`, `cogs/antinuke`), it's loaded once as a package and submodules are *not* loaded as separate cogs. Directories with empty `__init__.py` (e.g. `cogs/economia/`) keep the old behavior — each `.py` is its own cog.
 3. Syncs slash commands with `tree.sync()`.
 
-On `on_ready`, it posts/refreshes persistent embeds in fixed channels (status, colors, pix plans, tickets) — these channel IDs are still hardcoded; Phase 2 moves them to `bot.config`.
+On `on_ready`, it posts/refreshes persistent embeds in fixed channels (status, colors, pix plans, tickets) — all channel IDs are resolved via `bot.config.get("key")` (Phase 2 complete).
 
 **Cog system:** Each entry-point module (file or package with `setup()` in `__init__.py`) defines `async def setup(bot)`. Cogs communicate with each other via `bot.get_cog("CogName")` — always check for `None`. Cogs that need the database access `bot.db` (the asyncpg pool) and `bot.config` (the cached `ServerConfig`); both can be `None` in degraded mode.
 
@@ -75,7 +75,12 @@ On `on_ready`, it posts/refreshes persistent embeds in fixed channels (status, c
 - `db/migrations/001_initial.sql` — full schema (10 tables).
 - `db/migrations/002_seed.sql` — initial `server_config` row with the current hardcoded IDs.
 
-**`api/` package** — FastAPI scaffold (Phase 0). `/health` checks the DB; `/config/{guild_id}` reads the row. Auth, panel, and Mercado Pago webhook are scheduled for Phase 5.
+**`api/` package** — FastAPI (Phases 0–4). `/health` checks the DB; `/config/{guild_id}` reads/patches the row; `/items` full CRUD; `/users` list/get/patch-premium. Auth, panel, and Mercado Pago webhook are scheduled for Phase 5.
+
+**`repositories/` package** (Phases 3–4) — thin async wrappers over asyncpg for the bot's hot path:
+- `repositories/items.py` — `get_all`, `get_by_id`, `create`, `delete_one`, `delete_all`
+- `repositories/cooldowns.py` — `register`, `is_active`, `remaining_seconds`, `cleanup_expired`
+- `repositories/users.py` — `get`, `get_or_create`, `get_all`, `add_coins`, `remove_coins`, `transfer`, `update_daily`, `update_xp_nivel`, `set_titulo`, `set_premium`, `set_dobro`, `reset_xp_one`, `reset_xp_all`, `get_ranking_coins`, `get_ranking_xp`. Utilitário `row_to_cache()` converte row DB → dict em memória (TIMESTAMPTZ → float).
 
 **Persistence status (per-cog):**
 
@@ -83,23 +88,27 @@ On `on_ready`, it posts/refreshes persistent embeds in fixed channels (status, c
 |---|---|
 | `cogs/antispam/` | ✅ Postgres (with JSON fallback) |
 | `cogs/antinuke/` | ✅ Postgres for config |
-| Everything else (XP, coins, shop, cooldowns, guilds, adventures) | Still JSON |
+| `cogs/economia/loja.py` | ✅ Postgres via `repositories/items` (with JSON fallback) |
+| `cogs/economia/cooldown.py` | ✅ Postgres via `repositories/cooldowns` (with JSON fallback) |
+| `cogs/economia/fenrir_coins.py` | ✅ Postgres via `repositories/users` (with JSON fallback) |
+| `cogs/progressao/xp.py` | ✅ Postgres via `repositories/users` (with JSON fallback) |
+| Guilds, adventures | Still JSON (Phase 6) |
 
-**Legacy JSON files in `data/`** (still in use by JSON-backed cogs):
-- `data/user_data.json` — XP, level, title, premium plan, coins, daily streak per user (Phase 4 target)
-- `data/guilds_data.json` — guild membership and stats (Phase 6 target)
-- `data/loja_data.json` — shop items, sorted by price descending (Phase 3 target)
-- `data/aventuras_data.json` — in-progress adventures per user (Phase 6 target)
-- `data/cooldowns_data.json` — per-user, per-item cooldown timestamps (Phase 3 target)
-- `data/antispam.json` — only used as fallback when `bot.db is None`
+**Legacy JSON files in `data/`:**
+- `data/user_data.json` — **fallback only** when `bot.db is None` (primary storage is now `users` table)
+- `data/loja_data.json` — fallback only when `bot.db is None`
+- `data/cooldowns_data.json` — fallback only when `bot.db is None`
+- `data/antispam.json` — fallback only when `bot.db is None`
+- `data/guilds_data.json` — **still primary**, guild membership and stats (Phase 6 target)
+- `data/aventuras_data.json` — **still primary**, in-progress adventures per user (Phase 6 target)
 
 When you add new state, write directly to Postgres — do NOT add JSON files.
 
 ## Domain notes
 
-**XP/Coins multiplier stack** (`xp.py:adicionar_xp`): Multipliers from guild level, premium plan, and the double-XP boost stack **additively** (not multiplicatively): `total = 1 + (guild−1) + (premium−1) + (dobro−1)`. Premium tiers: aventureiro=2x, lendario=4x, mitico=6x for both XP and coins. After Phase 2, multipliers come from `bot.config.premium_multipliers` (JSONB).
+**XP/Coins multiplier stack** (`xp.py:adicionar_xp`): Multipliers from guild level, premium plan, and the double-XP boost stack **additively** (not multiplicatively): `total = 1 + (guild−1) + (premium−1) + (dobro−1)`. Premium tiers: aventureiro=2x, lendario=4x, mitico=6x for both XP and coins. Multipliers are read from `bot.config.premium_multipliers` (JSONB) at `cog_load`.
 
-**Shop purchase flow:** `LojaCog.comprar` → deducts coins via `FenrirCoins.remover_coins` → delegates side effects to `CompraCog.processar_compra` → `CooldownCog.registrar_compra` records the per-item cooldown. If `CompraCog` is unavailable, `LojaCog` refunds the coins.
+**Shop purchase flow:** `LojaCog.comprar` → deducts coins via `FenrirCoins.remover_coins` (atomic `UPDATE users SET coins = GREATEST(0, coins - $2)` in DB mode) → delegates side effects to `CompraCog.processar_compra(posicao, user_id, item_nome, item_db_id, cooldown_secs)` → `CooldownCog.registrar_compra(user_id, item_db_id, cooldown_secs)` registra o cooldown. Em DB mode, `item_db_id` é o `id` real da tabela `items`; em JSON mode, usa o índice posicional. Se `CompraCog` estiver indisponível, `LojaCog` devolve as coins. `CooldownCog` é totalmente async — use `await` em todas as chamadas.
 
 **Hardcoded channel/guild IDs:** Eliminated in Phase 2. All channel/guild lookups now use `bot.config.get("key")`. Never add new hardcoded IDs; add a column to `server_config` and reference via `bot.config`.
 
@@ -107,15 +116,18 @@ When you add new state, write directly to Postgres — do NOT add JSON files.
 
 **Level-up role system** (`xp.py:cargos_por_nivel`): Roles are assigned at levels 2, 5, 10, 20, 30, 40, 50. The map is now loaded from `bot.config["levelup_role_map"]` (JSONB, string keys: `{"2": role_id, ...}`) with hardcoded defaults as fallback. The `atualizar_cargos` method adds eligible roles and removes ones below the current level. Known bug — see `FIX_BUGS.md`.
 
-**Tests:** Use `pytest-asyncio` with `asyncio_mode = auto`. Pattern for testing cogs: mock `commands.Bot`, patch background `tasks.loop` decorators to prevent them from starting, and use `AsyncMock` for Discord interactions. Test fixtures must populate `bot.config` (a `ServerConfig` wrapping a dict with at least `commands_channel_id`) so that `guard_channel` can resolve correctly.
+**DB-mode cogs and `cog_load`:** `FenrirCoins` and `XPCog` implement `async def cog_load(self)` which sets `self.use_db = self.bot.db is not None`, populates `self.user_data` from the `users` table, and reads runtime parameters from `bot.config`. All mutation methods check `self.use_db` and call `repositories/users.py` functions in DB mode; `salvar_dados()` is a no-op in DB mode. Tests that instantiate these cogs must set `bot.db = None` so `cog_load` falls back to JSON mode.
+
+**Tests:** Use `pytest-asyncio` with `asyncio_mode = auto`. Pattern for testing cogs: mock `commands.Bot`, set `bot.db = None` and `cog.use_db = False` to keep tests in JSON mode, patch background `tasks.loop` decorators to prevent them from starting, and use `AsyncMock` for Discord interactions. Test fixtures must populate `bot.config` (a `ServerConfig` wrapping a dict with at least `commands_channel_id`) so that `guard_channel` can resolve correctly.
 
 ## Migration plan
 
-A full migration plan with the status of every phase lives in `MIGRATION.md`. Phases 0, 1, and 2 are done; Phase 3 (loja + cooldowns no DB) is next.
+A full migration plan with the status of every phase lives in `MIGRATION.md`. Phases 0–4 are done; Phase 5 (webhook MP + painel admin) is next.
 
 Key invariants for any new code:
 - **Bot talks directly to Postgres via `asyncpg`** — no HTTP intermediary between bot and database.
 - **`server_config` is the source of truth for IDs and parameters** — never add new hardcoded IDs; add a column and reference via `bot.config`.
 - **`antispam_config` and `antinuke_config` are JSONB** — change `AntispamConfig`/`AntinukeConfig` dataclasses freely; `from_dict()` is tolerant to missing/extra fields.
-- **`FenrirCoins` + `XPCog` race condition** on `user_data.json` will be resolved with atomic `UPDATE ... RETURNING` once on Postgres (Phase 4).
-- **Resilience contract**: if `bot.db is None`, the bot logs a warning and continues. Code paths that touch the DB must check `if self.bot.db is not None`.
+- **`FenrirCoins` + `XPCog` race condition is fixed** — mutations use targeted `UPDATE … SET field = $2` (not write-entire-row), so concurrent saves from the two cogs never overwrite each other.
+- **Resilience contract**: if `bot.db is None`, the bot logs a warning and continues in JSON mode. Code paths that touch the DB must check `self.use_db` (cogs) or `if self.bot.db is not None` (elsewhere).
+- **New state goes to Postgres** — do NOT add JSON files. If a cog needs a new persistent field, add a column to the appropriate table and expose it through `repositories/`.
