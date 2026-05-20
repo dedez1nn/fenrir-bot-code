@@ -182,7 +182,6 @@ class VoiceCreator(commands.Cog):
         self.main_channel_id = _DEFAULT_VOICE_CREATOR_CH
         self.feature_enabled: bool = True
         self.channel_name_prefix: str = "🔊 Sala de"
-        self.cleanup_loop.start()
 
     async def cog_load(self) -> None:
         cfg = getattr(self.bot, "config", None)
@@ -196,6 +195,8 @@ class VoiceCreator(commands.Cog):
                 self.channel_name_prefix = feat_cfg.get("channel_name_prefix") or "🔊 Sala de"
         from db.feature_config import validate_and_save_for_cog
         await validate_and_save_for_cog(self.bot, "voice_creator", self)
+        if not self.cleanup_loop.is_running():
+            self.cleanup_loop.start()
 
     async def reload_feature_state(self) -> None:
         await self.cog_load()
@@ -206,7 +207,12 @@ class VoiceCreator(commands.Cog):
         return validate_voice_creator(dict(cfg) if cfg else {})
 
     def cog_unload(self):
-        pass
+        if hasattr(self, 'cleanup_loop'):
+            self.cleanup_loop.cancel()
+
+    @tasks.loop(minutes=5)
+    async def cleanup_loop(self):
+        await self._cleanup_logic()
 
     async def _cleanup_logic(self):
         for guild in self.bot.guilds:
