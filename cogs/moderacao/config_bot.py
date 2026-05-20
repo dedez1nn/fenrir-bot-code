@@ -1,0 +1,669 @@
+import discord
+from discord.ext import commands
+from discord import app_commands
+import logging
+
+log = logging.getLogger(__name__)
+
+
+class ConfigBotModal(discord.ui.Modal, title="⚙️ Configuração do Bot"):
+    """Modal base para input de valores."""
+    pass
+
+
+class ConfigBotView(discord.ui.View):
+    """View interativa para navegação entre configurações."""
+
+    def __init__(self, bot, guild_id, config_data, step, total_steps):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.guild_id = guild_id
+        self.config_data = config_data
+        self.step = step
+        self.total_steps = total_steps
+
+    @discord.ui.button(label="◀️ Anterior", style=discord.ButtonStyle.gray)
+    async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.step > 1:
+            await self.show_step(interaction, self.step - 1)
+        else:
+            await interaction.response.send_message("❌ Você já está no primeiro passo.", ephemeral=True)
+
+    @discord.ui.button(label="Próximo ▶️", style=discord.ButtonStyle.primary)
+    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.step < self.total_steps:
+            await self.show_step(interaction, self.step + 1)
+        else:
+            await interaction.response.send_message("❌ Você já está no último passo.", ephemeral=True)
+
+    @discord.ui.button(label="💾 Salvar Configurações", style=discord.ButtonStyle.green)
+    async def save_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        await self.save_config(interaction)
+
+    async def show_step(self, interaction: discord.Interaction, step: int):
+        """Exibe o passo específico."""
+        self.step = step
+        embed = await self.get_step_embed()
+        view = ConfigBotView(self.bot, self.guild_id, self.config_data, step, self.total_steps)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+    async def get_step_embed(self) -> discord.Embed:
+        """Retorna o embed para o passo atual."""
+        guild = self.bot.get_guild(self.guild_id)
+        embed = discord.Embed(title=f"⚙️ Configuração do Bot - Passo {self.step}/{self.total_steps}",
+                              color=discord.Color.blue(), description="Use os botões abaixo para navegar.")
+
+        if self.step == 1:
+            embed.add_field(
+                name="📢 Canais de Log",
+                value=f"Configure os canais para logs de eventos importantes.\n\n"
+                      f"• **Commands**: {self._format_channel(self.config_data.get('commands_channel_id'))}\n"
+                      f"• **Status**: {self._format_channel(self.config_data.get('status_channel_id'))}\n"
+                      f"• **Help**: {self._format_channel(self.config_data.get('help_channel_id'))}\n"
+                      f"• **Antispam Log**: {self._format_channel(self.config_data.get('antispam_log_channel_id'))}\n"
+                      f"• **Antinuke Log**: {self._format_channel(self.config_data.get('antinuke_log_channel_id'))}\n\n"
+                      f"Para editar, use: `/config-bot-canais-log`",
+                inline=False
+            )
+
+        elif self.step == 2:
+            embed.add_field(
+                name="💰 Canais de Economia",
+                value=f"Configure os canais para eventos da economia.\n\n"
+                      f"• **Pix**: {self._format_channel(self.config_data.get('pix_channel_id'))}\n"
+                      f"• **Loja**: {self._format_channel(self.config_data.get('colors_channel_id'))}\n"
+                      f"• **Coins Log**: {self._format_channel(self.config_data.get('coins_log_channel_id'))}\n"
+                      f"• **XP Log**: {self._format_channel(self.config_data.get('xp_log_channel_id'))}\n"
+                      f"• **Level Up**: {self._format_channel(self.config_data.get('levelup_channel_id'))}\n\n"
+                      f"Para editar, use: `/config-bot-canais-economia`",
+                inline=False
+            )
+
+        elif self.step == 3:
+            embed.add_field(
+                name="🎫 Canais Especiais",
+                value=f"Configure canais para sistemas especiais.\n\n"
+                      f"• **Tickets Support**: {self._format_channel(self.config_data.get('ticket_support_category_id'))}\n"
+                      f"• **Tickets Donation**: {self._format_channel(self.config_data.get('ticket_donation_category_id'))}\n"
+                      f"• **Voice Creator**: {self._format_channel(self.config_data.get('voice_creator_channel_id'))}\n"
+                      f"• **Adventure Log**: {self._format_channel(self.config_data.get('adventure_log_channel_id'))}\n"
+                      f"• **Guild Raid**: {self._format_channel(self.config_data.get('guild_raid_channel_id'))}\n\n"
+                      f"Para editar, use: `/config-bot-canais-especiais`",
+                inline=False
+            )
+
+        elif self.step == 4:
+            premium_prices = self.config_data.get('premium_prices', {})
+            embed.add_field(
+                name="💎 Preços Premium",
+                value=f"Preços dos planos premium em Pix.\n\n"
+                      f"• **Aventureiro**: R$ {premium_prices.get('aventureiro', 0)}\n"
+                      f"• **Lendário**: R$ {premium_prices.get('lendario', 0)}\n"
+                      f"• **Mítico**: R$ {premium_prices.get('mitico', 0)}\n\n"
+                      f"Para editar, use: `/config-bot-premium`",
+                inline=False
+            )
+
+        elif self.step == 5:
+            premium_multipliers = self.config_data.get('premium_multipliers', {})
+            embed.add_field(
+                name="📈 Multiplicadores Premium",
+                value=f"Multiplicadores de XP e coins por plano.\n\n"
+                      f"• **Aventureiro**: {premium_multipliers.get('aventureiro', 1)}x\n"
+                      f"• **Lendário**: {premium_multipliers.get('lendario', 1)}x\n"
+                      f"• **Mítico**: {premium_multipliers.get('mitico', 1)}x\n\n"
+                      f"Para editar, use: `/config-bot-premium`",
+                inline=False
+            )
+
+        elif self.step == 6:
+            embed.add_field(
+                name="💰 Ganhos Diários",
+                value=f"Valores de coins para interações.\n\n"
+                      f"• **Daily**: {self.config_data.get('daily_coins', 10000)} coins\n"
+                      f"• **Bonus Daily**: {self.config_data.get('daily_streak_bonus', 10000)} coins\n"
+                      f"• **Mensagem**: {self.config_data.get('coins_por_mensagem', 5000)} coins\n"
+                      f"• **Voz**: {self.config_data.get('coins_por_voz', 15000)} coins\n"
+                      f"• **Bonus Nível**: {self.config_data.get('bonus_coins_por_nivel', 50000)} coins\n\n"
+                      f"Para editar, use: `/config-bot-economia`",
+                inline=False
+            )
+
+        elif self.step == 7:
+            embed.add_field(
+                name="⭐ Ganhos de XP",
+                value=f"Valores de XP para interações.\n\n"
+                      f"• **Mensagem**: {self.config_data.get('xp_por_mensagem', 5000)} XP\n"
+                      f"• **Voz**: {self.config_data.get('xp_por_voz', 15000)} XP (a cada {self.config_data.get('voice_xp_interval_s', 300)}s)\n\n"
+                      f"Para editar, use: `/config-bot-xp`",
+                inline=False
+            )
+
+        elif self.step == 8:
+            admin_ping_ids = self.config_data.get('admin_ping_ids', [])
+            admin_mention = ", ".join([f"<@&{rid}>" for rid in admin_ping_ids]) if admin_ping_ids else "Nenhum"
+            embed.add_field(
+                name="🔔 Papéis de Notificação",
+                value=f"Papéis que serão mencionados para notificações importantes.\n\n"
+                      f"**Papéis**: {admin_mention}\n\n"
+                      f"Para editar, use: `/config-bot-admins`",
+                inline=False
+            )
+
+        elif self.step == 9:
+            embed.add_field(
+                name="✅ Resumo",
+                value="Revisar todas as configurações acima.\n\n"
+                      "Você pode:\n"
+                      "• Navegar pelos passos anteriores para ajustar valores\n"
+                      "• Clicar em 'Salvar Configurações' para confirmar\n"
+                      "• Usar comandos específicos para edições avançadas",
+                inline=False
+            )
+
+        embed.set_footer(text=f"Passo {self.step} de {self.total_steps}")
+        return embed
+
+    def _format_channel(self, channel_id) -> str:
+        """Formata o ID do canal para exibição."""
+        if not channel_id:
+            return "❌ Não configurado"
+        guild = self.bot.get_guild(self.guild_id)
+        if guild:
+            channel = guild.get_channel(channel_id)
+            if channel:
+                return f"<#{channel_id}>"
+        return f"❌ Canal inválido ({channel_id})"
+
+    async def save_config(self, interaction: discord.Interaction):
+        """Salva as configurações no banco de dados."""
+        if not self.bot.db:
+            await interaction.followup.send("❌ Banco de dados não disponível.", ephemeral=True)
+            return
+
+        try:
+            async with self.bot.db.acquire() as conn:
+                query = """
+                    UPDATE server_config
+                    SET commands_channel_id = $2,
+                        status_channel_id = $3,
+                        help_channel_id = $4,
+                        antispam_log_channel_id = $5,
+                        antinuke_log_channel_id = $6,
+                        pix_channel_id = $7,
+                        colors_channel_id = $8,
+                        coins_log_channel_id = $9,
+                        xp_log_channel_id = $10,
+                        levelup_channel_id = $11,
+                        ticket_support_category_id = $12,
+                        ticket_donation_category_id = $13,
+                        voice_creator_channel_id = $14,
+                        adventure_log_channel_id = $15,
+                        guild_raid_channel_id = $16,
+                        premium_prices = $17::jsonb,
+                        premium_multipliers = $18::jsonb,
+                        daily_coins = $19,
+                        daily_streak_bonus = $20,
+                        coins_por_mensagem = $21,
+                        coins_por_voz = $22,
+                        xp_por_mensagem = $23,
+                        xp_por_voz = $24,
+                        voice_xp_interval_s = $25,
+                        bonus_coins_por_nivel = $26,
+                        admin_ping_ids = $27,
+                        updated_at = NOW()
+                    WHERE guild_id = $1
+                """
+
+                premium_prices = self.config_data.get('premium_prices', {})
+                premium_multipliers = self.config_data.get('premium_multipliers', {})
+
+                await conn.execute(
+                    query,
+                    self.guild_id,
+                    self.config_data.get('commands_channel_id'),
+                    self.config_data.get('status_channel_id'),
+                    self.config_data.get('help_channel_id'),
+                    self.config_data.get('antispam_log_channel_id'),
+                    self.config_data.get('antinuke_log_channel_id'),
+                    self.config_data.get('pix_channel_id'),
+                    self.config_data.get('colors_channel_id'),
+                    self.config_data.get('coins_log_channel_id'),
+                    self.config_data.get('xp_log_channel_id'),
+                    self.config_data.get('levelup_channel_id'),
+                    self.config_data.get('ticket_support_category_id'),
+                    self.config_data.get('ticket_donation_category_id'),
+                    self.config_data.get('voice_creator_channel_id'),
+                    self.config_data.get('adventure_log_channel_id'),
+                    self.config_data.get('guild_raid_channel_id'),
+                    premium_prices,
+                    premium_multipliers,
+                    self.config_data.get('daily_coins', 10000),
+                    self.config_data.get('daily_streak_bonus', 10000),
+                    self.config_data.get('coins_por_mensagem', 5000),
+                    self.config_data.get('coins_por_voz', 15000),
+                    self.config_data.get('xp_por_mensagem', 5000),
+                    self.config_data.get('xp_por_voz', 15000),
+                    self.config_data.get('voice_xp_interval_s', 300),
+                    self.config_data.get('bonus_coins_por_nivel', 50000),
+                    self.config_data.get('admin_ping_ids', []),
+                )
+
+            # Invalidate cache
+            from db.config import refresh_server_config
+            await refresh_server_config(self.bot.db, self.guild_id)
+
+            # Emit NOTIFY for other processes
+            async with self.bot.db.acquire() as conn:
+                await conn.execute(
+                    "SELECT pg_notify('fenrir_cache', $1)",
+                    f"config:{self.guild_id}"
+                )
+
+            embed = discord.Embed(
+                title="✅ Configurações Salvas",
+                description="Todas as configurações foram salvas com sucesso!",
+                color=discord.Color.green()
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            log.error(f"Erro ao salvar configurações: {e}")
+            await interaction.followup.send(f"❌ Erro ao salvar: {e}", ephemeral=True)
+
+
+class ConfigBotCog(commands.Cog):
+    """Sistema de configuração interativa do bot."""
+
+    def __init__(self, bot):
+        self.bot = bot
+
+    @app_commands.command(name="config-bot", description="🔧 Guia completo de configuração do bot")
+    async def config_bot(self, interaction: discord.Interaction):
+        """Inicia o wizard interativo de configuração."""
+
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ Você precisa ser administrador para usar este comando.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        if not self.bot.db:
+            await interaction.followup.send("❌ Banco de dados não disponível.", ephemeral=True)
+            return
+
+        try:
+            from db.config import load_server_config
+
+            config = await load_server_config(self.bot.db, interaction.guild_id)
+            if not config:
+                await interaction.followup.send("❌ Configuração da guild não encontrada.", ephemeral=True)
+                return
+
+            config_data = config.to_dict()
+
+            embed = discord.Embed(
+                title="⚙️ Configuração do Bot - Passo 1/9",
+                description="Bem-vindo ao wizard de configuração! Use os botões para navegar.\n\n"
+                            "Este guia ajudará você a configurar todos os aspectos do bot de forma prática.",
+                color=discord.Color.blue()
+            )
+
+            view = ConfigBotView(self.bot, interaction.guild_id, config_data, 1, 9)
+            step_embed = await view.get_step_embed()
+
+            await interaction.followup.send(embed=step_embed, view=view, ephemeral=True)
+
+        except Exception as e:
+            log.error(f"Erro ao iniciar config-bot: {e}")
+            await interaction.followup.send(f"❌ Erro: {e}", ephemeral=True)
+
+
+    @app_commands.command(name="config-canais-log", description="Configurar canais de log")
+    @app_commands.describe(
+        commands="Canal para logs de comandos",
+        status="Canal de status do bot",
+        help="Canal de ajuda",
+        antispam="Canal de log antispam",
+        antinuke="Canal de log antinuke"
+    )
+    async def config_canais_log(
+        self,
+        interaction: discord.Interaction,
+        commands: discord.TextChannel = None,
+        status: discord.TextChannel = None,
+        help: discord.TextChannel = None,
+        antispam: discord.TextChannel = None,
+        antinuke: discord.TextChannel = None
+    ):
+        """Edita canais de log."""
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ Você precisa ser administrador.", ephemeral=True)
+            return
+
+        if not self.bot.db:
+            await interaction.response.send_message("❌ Banco de dados não disponível.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            async with self.bot.db.acquire() as conn:
+                updates = []
+                params = [interaction.guild_id]
+                idx = 2
+
+                if commands:
+                    updates.append(f"commands_channel_id = ${idx}")
+                    params.append(commands.id)
+                    idx += 1
+
+                if status:
+                    updates.append(f"status_channel_id = ${idx}")
+                    params.append(status.id)
+                    idx += 1
+
+                if help:
+                    updates.append(f"help_channel_id = ${idx}")
+                    params.append(help.id)
+                    idx += 1
+
+                if antispam:
+                    updates.append(f"antispam_log_channel_id = ${idx}")
+                    params.append(antispam.id)
+                    idx += 1
+
+                if antinuke:
+                    updates.append(f"antinuke_log_channel_id = ${idx}")
+                    params.append(antinuke.id)
+                    idx += 1
+
+                if not updates:
+                    await interaction.followup.send("⚠️ Nenhum canal foi especificado.", ephemeral=True)
+                    return
+
+                updates.append("updated_at = NOW()")
+                query = f"UPDATE server_config SET {', '.join(updates)} WHERE guild_id = $1"
+                await conn.execute(query, *params)
+
+                from db.config import refresh_server_config
+                await refresh_server_config(self.bot.db, interaction.guild_id)
+
+                async with self.bot.db.acquire() as conn:
+                    await conn.execute(
+                        "SELECT pg_notify('fenrir_cache', $1)",
+                        f"config:{interaction.guild_id}"
+                    )
+
+            embed = discord.Embed(
+                title="✅ Canais de Log Atualizados",
+                description="Canais foram configurados com sucesso!",
+                color=discord.Color.green()
+            )
+            if commands:
+                embed.add_field(name="📢 Commands", value=commands.mention, inline=True)
+            if status:
+                embed.add_field(name="📊 Status", value=status.mention, inline=True)
+            if help:
+                embed.add_field(name="❓ Help", value=help.mention, inline=True)
+            if antispam:
+                embed.add_field(name="🚫 Antispam", value=antispam.mention, inline=True)
+            if antinuke:
+                embed.add_field(name="☢️ Antinuke", value=antinuke.mention, inline=True)
+
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            log.error(f"Erro ao configurar canais de log: {e}")
+            await interaction.followup.send(f"❌ Erro: {e}", ephemeral=True)
+
+    @app_commands.command(name="config-economia", description="Configurar ganhos de moeda")
+    @app_commands.describe(
+        daily="Coins do daily",
+        bonus_daily="Bonus de streak do daily",
+        mensagem="Coins por mensagem",
+        voz="Coins por minuto em voz",
+        nivel="Bonus de coins por level up"
+    )
+    async def config_economia(
+        self,
+        interaction: discord.Interaction,
+        daily: int = None,
+        bonus_daily: int = None,
+        mensagem: int = None,
+        voz: int = None,
+        nivel: int = None
+    ):
+        """Edita ganhos de coins."""
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ Você precisa ser administrador.", ephemeral=True)
+            return
+
+        if not self.bot.db:
+            await interaction.response.send_message("❌ Banco de dados não disponível.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            async with self.bot.db.acquire() as conn:
+                updates = []
+                params = [interaction.guild_id]
+                idx = 2
+
+                if daily is not None:
+                    updates.append(f"daily_coins = ${idx}")
+                    params.append(daily)
+                    idx += 1
+
+                if bonus_daily is not None:
+                    updates.append(f"daily_streak_bonus = ${idx}")
+                    params.append(bonus_daily)
+                    idx += 1
+
+                if mensagem is not None:
+                    updates.append(f"coins_por_mensagem = ${idx}")
+                    params.append(mensagem)
+                    idx += 1
+
+                if voz is not None:
+                    updates.append(f"coins_por_voz = ${idx}")
+                    params.append(voz)
+                    idx += 1
+
+                if nivel is not None:
+                    updates.append(f"bonus_coins_por_nivel = ${idx}")
+                    params.append(nivel)
+                    idx += 1
+
+                if not updates:
+                    await interaction.followup.send("⚠️ Nenhum valor foi especificado.", ephemeral=True)
+                    return
+
+                updates.append("updated_at = NOW()")
+                query = f"UPDATE server_config SET {', '.join(updates)} WHERE guild_id = $1"
+                await conn.execute(query, *params)
+
+                from db.config import refresh_server_config
+                await refresh_server_config(self.bot.db, interaction.guild_id)
+
+                async with self.bot.db.acquire() as conn:
+                    await conn.execute(
+                        "SELECT pg_notify('fenrir_cache', $1)",
+                        f"config:{interaction.guild_id}"
+                    )
+
+            embed = discord.Embed(
+                title="✅ Ganhos de Coins Atualizados",
+                color=discord.Color.green()
+            )
+            if daily is not None:
+                embed.add_field(name="💰 Daily", value=f"{daily} coins", inline=True)
+            if bonus_daily is not None:
+                embed.add_field(name="⭐ Bonus Streak", value=f"{bonus_daily} coins", inline=True)
+            if mensagem is not None:
+                embed.add_field(name="💬 Por Mensagem", value=f"{mensagem} coins", inline=True)
+            if voz is not None:
+                embed.add_field(name="🔊 Por Voz", value=f"{voz} coins", inline=True)
+            if nivel is not None:
+                embed.add_field(name="📈 Por Level", value=f"{nivel} coins", inline=True)
+
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            log.error(f"Erro ao configurar economia: {e}")
+            await interaction.followup.send(f"❌ Erro: {e}", ephemeral=True)
+
+    @app_commands.command(name="config-xp", description="Configurar ganhos de XP")
+    @app_commands.describe(
+        mensagem="XP por mensagem",
+        voz="XP por minuto em voz",
+        intervalo="Intervalo em segundos para dar XP em voz"
+    )
+    async def config_xp(
+        self,
+        interaction: discord.Interaction,
+        mensagem: int = None,
+        voz: int = None,
+        intervalo: int = None
+    ):
+        """Edita ganhos de XP."""
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ Você precisa ser administrador.", ephemeral=True)
+            return
+
+        if not self.bot.db:
+            await interaction.response.send_message("❌ Banco de dados não disponível.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            async with self.bot.db.acquire() as conn:
+                updates = []
+                params = [interaction.guild_id]
+                idx = 2
+
+                if mensagem is not None:
+                    updates.append(f"xp_por_mensagem = ${idx}")
+                    params.append(mensagem)
+                    idx += 1
+
+                if voz is not None:
+                    updates.append(f"xp_por_voz = ${idx}")
+                    params.append(voz)
+                    idx += 1
+
+                if intervalo is not None:
+                    updates.append(f"voice_xp_interval_s = ${idx}")
+                    params.append(intervalo)
+                    idx += 1
+
+                if not updates:
+                    await interaction.followup.send("⚠️ Nenhum valor foi especificado.", ephemeral=True)
+                    return
+
+                updates.append("updated_at = NOW()")
+                query = f"UPDATE server_config SET {', '.join(updates)} WHERE guild_id = $1"
+                await conn.execute(query, *params)
+
+                from db.config import refresh_server_config
+                await refresh_server_config(self.bot.db, interaction.guild_id)
+
+                async with self.bot.db.acquire() as conn:
+                    await conn.execute(
+                        "SELECT pg_notify('fenrir_cache', $1)",
+                        f"config:{interaction.guild_id}"
+                    )
+
+            embed = discord.Embed(
+                title="✅ Ganhos de XP Atualizados",
+                color=discord.Color.green()
+            )
+            if mensagem is not None:
+                embed.add_field(name="💬 Por Mensagem", value=f"{mensagem} XP", inline=True)
+            if voz is not None:
+                embed.add_field(name="🔊 Por Minuto em Voz", value=f"{voz} XP", inline=True)
+            if intervalo is not None:
+                embed.add_field(name="⏱️ Intervalo", value=f"{intervalo} segundos", inline=True)
+
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            log.error(f"Erro ao configurar XP: {e}")
+            await interaction.followup.send(f"❌ Erro: {e}", ephemeral=True)
+
+    @app_commands.command(name="config-premium", description="Configurar planos premium")
+    @app_commands.describe(
+        aventureiro="Preço do plano aventureiro",
+        lendario="Preço do plano lendário",
+        mitico="Preço do plano mítico"
+    )
+    async def config_premium(
+        self,
+        interaction: discord.Interaction,
+        aventureiro: int = None,
+        lendario: int = None,
+        mitico: int = None
+    ):
+        """Edita preços dos planos premium."""
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ Você precisa ser administrador.", ephemeral=True)
+            return
+
+        if not self.bot.db:
+            await interaction.response.send_message("❌ Banco de dados não disponível.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            from db.config import load_server_config
+
+            config = await load_server_config(self.bot.db, interaction.guild_id)
+            if not config:
+                await interaction.followup.send("❌ Configuração não encontrada.", ephemeral=True)
+                return
+
+            prices = dict(config.get('premium_prices', {}))
+
+            if aventureiro is not None:
+                prices['aventureiro'] = aventureiro
+            if lendario is not None:
+                prices['lendario'] = lendario
+            if mitico is not None:
+                prices['mitico'] = mitico
+
+            async with self.bot.db.acquire() as conn:
+                await conn.execute(
+                    "UPDATE server_config SET premium_prices = $1::jsonb, updated_at = NOW() WHERE guild_id = $2",
+                    prices,
+                    interaction.guild_id
+                )
+
+                from db.config import refresh_server_config
+                await refresh_server_config(self.bot.db, interaction.guild_id)
+
+                await conn.execute(
+                    "SELECT pg_notify('fenrir_cache', $1)",
+                    f"config:{interaction.guild_id}"
+                )
+
+            embed = discord.Embed(
+                title="✅ Preços Premium Atualizados",
+                color=discord.Color.green()
+            )
+            embed.add_field(name="⭐ Aventureiro", value=f"R$ {prices.get('aventureiro', 0)}", inline=True)
+            embed.add_field(name="🌟 Lendário", value=f"R$ {prices.get('lendario', 0)}", inline=True)
+            embed.add_field(name="✨ Mítico", value=f"R$ {prices.get('mitico', 0)}", inline=True)
+
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            log.error(f"Erro ao configurar premium: {e}")
+            await interaction.followup.send(f"❌ Erro: {e}", ephemeral=True)
+
+
+async def setup(bot):
+    await bot.add_cog(ConfigBotCog(bot))

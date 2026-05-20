@@ -137,15 +137,25 @@ class FenrirBot(commands.Bot):
         if self.db is None:
             return
 
-        def _on_notify(conn, pid, channel, payload):
-            asyncio.create_task(self._handle_cache_notification(payload))
+        async def _listen_loop():
+            conn = None
+            try:
+                conn = await self.db.acquire()
+                def _on_notify(conn, pid, channel, payload):
+                    asyncio.create_task(self._handle_cache_notification(payload))
 
-        self._cache_notify_cb = _on_notify
-        try:
-            await self.db.add_listener("fenrir_cache", _on_notify)
-            log.info("Cache listener ativo (LISTEN fenrir_cache).")
-        except Exception as exc:
-            log.warning("Falha ao iniciar cache listener: %s", exc)
+                await conn.add_listener("fenrir_cache", _on_notify)
+                log.info("Cache listener ativo (LISTEN fenrir_cache).")
+
+                while True:
+                    await asyncio.sleep(300)
+            except Exception as exc:
+                log.warning("Falha ao iniciar cache listener: %s", exc)
+            finally:
+                if conn:
+                    await self.db.release(conn)
+
+        asyncio.create_task(_listen_loop())
 
     async def _handle_cache_notification(self, payload: str) -> None:
         """Despacha notificação de invalidação de cache."""
