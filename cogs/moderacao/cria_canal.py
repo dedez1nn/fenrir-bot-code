@@ -217,10 +217,6 @@ class VoiceCreator(commands.Cog):
                     except (discord.Forbidden, discord.HTTPException):
                         pass
 
-    @tasks.loop(minutes=2)
-    async def cleanup_loop(self):
-        await self._cleanup_logic()
-
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
         if not self.feature_enabled:
@@ -253,18 +249,6 @@ class VoiceCreator(commands.Cog):
 
             view = VoiceControlView(self.bot, member, new_channel)
             await new_channel.send(embed=embed, view=view)
-
-    @tasks.loop(minutes=2)
-    async def cleanup_loop(self):
-        for guild in self.bot.guilds:
-            for channel in guild.voice_channels:
-                if channel.name.startswith(self.channel_name_prefix) and len(channel.members) == 0:
-                    try:
-                        await channel.delete()
-                    except discord.Forbidden:
-                        pass
-                    except discord.HTTPException:
-                        pass
 
 async def setup(bot):
     await bot.add_cog(VoiceCreator(bot))
