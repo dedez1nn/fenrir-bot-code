@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from .. import db as api_db
+from ..audit import write_audit
 from .auth import require_admin
 
 log = logging.getLogger(__name__)
@@ -83,7 +84,7 @@ async def toggle_feature(
     guild_id: int,
     feature: str,
     body: FeatureToggle,
-    _=Depends(require_admin),
+    user=Depends(require_admin),
 ) -> Dict[str, Any]:
     """Habilita ou desabilita uma feature para a guild. Emite NOTIFY ao bot."""
     if feature not in _KNOWN_FEATURES:
@@ -107,13 +108,11 @@ async def toggle_feature(
         )
 
     try:
-        async with api_db.acquire() as notify_conn:
-            await notify_conn.execute(
-                "SELECT pg_notify('fenrir_cache', $1)",
-                f"feature:{guild_id}:{feature}",
-            )
+        async with api_db.acquire() as conn2:
+            await conn2.execute("SELECT pg_notify('fenrir_cache', $1)", f"feature:{guild_id}:{feature}")
+            await write_audit(conn2, guild_id, user, "feature", {"enabled": body.enabled}, target=feature)
     except Exception as exc:
-        log.warning("Falha ao enviar NOTIFY feature: %s", exc)
+        log.warning("Falha ao enviar NOTIFY/audit feature: %s", exc)
 
     return {
         "guild_id": guild_id,

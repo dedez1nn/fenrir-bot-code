@@ -18,6 +18,7 @@ class AventuraCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.use_db: bool = False
+        self.feature_enabled: bool = True
         self.ARQUIVO_AVENTURAS = "data/aventuras_data.json"
         
         self.COOLDOWN_HORAS = 0.001
@@ -81,8 +82,28 @@ class AventuraCog(commands.Cog):
                 self.XP_VITORIA_MACHUCADO          = rw.get("xp_vitoria_machucado", 1500)
                 self.XP_TESOURO                    = rw.get("xp_tesouro", 4000)
                 self.XP_FURTIVIDADE                = rw.get("xp_furtividade", 2000)
+        if self.bot.db is not None:
+            cfg = getattr(self.bot, "config", None)
+            guild_id = (cfg.get("guild_id") if cfg else None)
+            if guild_id:
+                from db.feature_config import is_feature_enabled
+                self.feature_enabled = await is_feature_enabled(self.bot.db, guild_id, "adventures")
+
         if self.use_db:
             log.info("AventuraCog: modo DB ativo")
+
+    async def reload_feature_state(self) -> None:
+        if self.bot.db is not None:
+            cfg = getattr(self.bot, "config", None)
+            guild_id = (cfg.get("guild_id") if cfg else None)
+            if guild_id:
+                from db.feature_config import is_feature_enabled
+                self.feature_enabled = await is_feature_enabled(self.bot.db, guild_id, "adventures")
+
+    async def validate_feature_config(self) -> list:
+        from db.validators import validate_adventures
+        cfg = getattr(self.bot, "config", None)
+        return validate_adventures(cfg.to_dict() if cfg else {})
 
     # ─── JSON helpers (fallback) ──────────────────────────────────────────────
 
@@ -664,7 +685,10 @@ class AventuraCog(commands.Cog):
 
     @app_commands.command(name="aventura", description="🌌 Inicie uma aventura ou resgate uma pendente")
     async def aventura(self, interaction: discord.Interaction):
-        
+        if not self.feature_enabled:
+            await interaction.response.send_message("❌ As aventuras não estão habilitadas neste servidor.", ephemeral=True)
+            return
+
         if await self.bot.guard_channel(interaction):
             return
         

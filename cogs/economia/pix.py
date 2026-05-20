@@ -26,6 +26,7 @@ class PixCog(commands.Cog):
         self.bot = bot
         self.mp_sdk = mercadopago.SDK(TOKEN)
         self.use_db = False
+        self.feature_enabled: bool = True
         self.planos = {
             "aventureiro": 3.99,
             "lendario": 7.99,
@@ -58,6 +59,12 @@ class PixCog(commands.Cog):
 
     async def cog_load(self):
         self.use_db = self.bot.db is not None
+        if self.bot.db is not None:
+            cfg = getattr(self.bot, "config", None)
+            guild_id = (cfg.get("guild_id") if cfg else None)
+            if guild_id:
+                from db.feature_config import is_feature_enabled
+                self.feature_enabled = await is_feature_enabled(self.bot.db, guild_id, "premium")
         if self.use_db:
             try:
                 plans = await premium_repo.get_all(self.bot.db)
@@ -71,6 +78,19 @@ class PixCog(commands.Cog):
                     log.info("PixCog: catálogo premium carregado do DB (%d planos).", len(plans))
             except Exception as exc:
                 log.warning("PixCog: falha ao carregar premium_catalog, usando defaults: %s", exc)
+
+    async def reload_feature_state(self) -> None:
+        if self.bot.db is not None:
+            cfg = getattr(self.bot, "config", None)
+            guild_id = (cfg.get("guild_id") if cfg else None)
+            if guild_id:
+                from db.feature_config import is_feature_enabled
+                self.feature_enabled = await is_feature_enabled(self.bot.db, guild_id, "premium")
+
+    async def validate_feature_config(self) -> list:
+        from db.validators import validate_premium
+        cfg = getattr(self.bot, "config", None)
+        return validate_premium(cfg.to_dict() if cfg else {})
 
     # ─── grant premium via webhook (chamado pelo bot após NOTIFY) ─────────────
 

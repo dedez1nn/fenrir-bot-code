@@ -13,6 +13,7 @@ from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from .. import db as api_db
+from ..audit import write_audit
 from .auth import require_admin
 
 router = APIRouter(prefix="/config", tags=["config"])
@@ -85,7 +86,7 @@ async def get_config(guild_id: int) -> Dict[str, Any]:
 
 
 @router.patch("/{guild_id}")
-async def patch_config(guild_id: int, body: Dict[str, Any], _=Depends(require_admin)) -> Dict[str, Any]:
+async def patch_config(guild_id: int, body: Dict[str, Any], user=Depends(require_admin)) -> Dict[str, Any]:
     """Atualiza campos específicos de server_config.
 
     Somente campos listados em `_ALLOWED_PATCH_FIELDS` são aceitos.
@@ -122,15 +123,12 @@ async def patch_config(guild_id: int, body: Dict[str, Any], _=Depends(require_ad
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="server_config não existe para esta guild")
 
-    # Notifica o bot para recarregar server_config do banco (invalida cache TTL)
     try:
-        async with api_db.acquire() as notify_conn:
-            await notify_conn.execute(
-                "SELECT pg_notify('fenrir_cache', $1)",
-                f"config:{guild_id}",
-            )
+        async with api_db.acquire() as conn2:
+            await conn2.execute("SELECT pg_notify('fenrir_cache', $1)", f"config:{guild_id}")
+            await write_audit(conn2, guild_id, user, "server_config", body)
     except Exception as exc:
         import logging
-        logging.getLogger(__name__).warning("Falha ao enviar NOTIFY config: %s", exc)
+        logging.getLogger(__name__).warning("Falha ao enviar NOTIFY/audit config: %s", exc)
 
     return dict(row)

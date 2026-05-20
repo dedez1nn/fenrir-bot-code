@@ -24,6 +24,11 @@ class MemberLogs(commands.Cog):
     async def reload_feature_state(self) -> None:
         await self.cog_load()
 
+    async def validate_feature_config(self) -> list:
+        from db.validators import validate_member_logs
+        cfg = getattr(self.bot, "config", None)
+        return validate_member_logs(cfg.to_dict() if cfg else {})
+
     def _cfg(self, key: str, default: int) -> int:
         c = getattr(self.bot, "config", None)
         return (c.get(key) if c else None) or default

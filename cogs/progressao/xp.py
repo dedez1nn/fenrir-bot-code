@@ -319,6 +319,7 @@ class XPCog(commands.Cog):
         self.cooldowns = {}
         self.cooldown_segundos = 10
         self.use_db = False
+        self.feature_enabled: bool = True
 
         self.voice_users = {}
         self.voice_xp_interval = 300
@@ -378,6 +379,21 @@ class XPCog(commands.Cog):
             self.coins_por_voz         = self.bot.config.get("coins_por_voz")         or self.coins_por_voz
             self.coins_por_vitoria     = self.bot.config.get("coins_por_vitoria")     or self.coins_por_vitoria
             self.cooldown_segundos     = self.bot.config.get("xp_message_cooldown_s") or self.cooldown_segundos
+
+        if self.bot.db is not None:
+            cfg = getattr(self.bot, "config", None)
+            guild_id = (cfg.get("guild_id") if cfg else None)
+            if guild_id:
+                from db.feature_config import is_feature_enabled
+                self.feature_enabled = await is_feature_enabled(self.bot.db, guild_id, "xp")
+
+    async def reload_feature_state(self) -> None:
+        if self.bot.db is not None:
+            cfg = getattr(self.bot, "config", None)
+            guild_id = (cfg.get("guild_id") if cfg else None)
+            if guild_id:
+                from db.feature_config import is_feature_enabled
+                self.feature_enabled = await is_feature_enabled(self.bot.db, guild_id, "xp")
 
     def _restaurar_dobro_xp(self):
         agora = time.time()
@@ -991,6 +1007,8 @@ class XPCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message):
+        if not self.feature_enabled:
+            return
         if message.author.bot or not message.guild:
             return
 

@@ -449,6 +449,95 @@ async def validate_discord_references(guild_id, config_patch):
 
 ---
 
+### ✅ Fase 7 — Dashboard Unificado para o Painel Web — CONCLUÍDA
+
+
+**Objetivo:** Expor via API tudo que o painel precisa em uma única chamada GET, eliminar round-trips múltiplos.
+
+#### Tarefas
+
+7.1. **`GET /server/{guild_id}`** — endpoint unificado retornando:
+- `server_config`: todos os campos da config do servidor
+- `features`: dict feature → {enabled, config, validation: {is_valid, errors}}
+- `premium_catalog`: planos ativos ordenados por preço
+
+7.2. **`GET /server/{guild_id}/audit`** — histórico paginado de alterações (implementado na Fase 9).
+
+7.3. **Schema padronizado de erro** — já provido por `db/validators.py` com campos `code`, `field`, `message`, `suggestion`.
+
+Implementação: `api/routers/server.py` registrado em `api/main.py`.
+
+**Critério de conclusão:** painel pode obter toda a informação de configuração em um único GET sem requerer múltiplas chamadas paralelas.
+
+---
+
+### ✅ Fase 8 — Feature Flags nas Cogs Econômicas e Health Check de Config — CONCLUÍDA
+
+**Objetivo:** Completar a cobertura de feature flags nas cogs de progressão/economia e expor um diagnóstico de saúde de configuração acessível pelo bot e pelo painel.
+
+#### Tarefas
+
+8.1. **Adicionar `feature_enabled` às cogs restantes:**
+
+| Cog | Feature key | Listener/comando guarded |
+|---|---|---|
+| `XPCog` | `xp` | `on_message` (XP automático por chat) |
+| `AventuraCog` | `adventures` | `/aventura` (já tem cog_load, add flag) |
+| `PixCog` | `premium` | carregar catálogo + grant rewards |
+
+8.2. **`validate_feature_config()` nas cogs sem ela:**
+- `AventuraCog`: verifica `adventure_log_channel_id`
+- `MemberLogs`: delega a `validate_member_logs` de `db/validators.py`
+
+8.3. **`FenrirBot._check_config_health()`** em `main.py`:
+- Roda `validate_all(config.to_dict())` e loga warnings para cada feature com erros
+- Chamado em `on_ready` após todos os cogs carregarem
+- Rechamado quando NOTIFY `config:{guild_id}` é recebido
+
+8.4. **Slash command `/config_status`** — admin only, exibe embed com estado de validação de todas as features (canais, roles, API keys). Cog: `cogs/interface/config_check.py`.
+
+**Critério de conclusão:** toda cog com listeners automáticos respeita feature flag; bot loga saúde da config em cada boot; `/config_status` retorna diagnóstico sem acessar o DB diretamente no comando.
+
+---
+
+### ✅ Fase 9 — Auditoria de Alterações de Configuração — CONCLUÍDA
+
+**Objetivo:** Registrar quem alterou o quê e quando, permitindo rastrear mudanças que causaram comportamento inesperado.
+
+#### Tarefas
+
+9.1. **Criar tabela `config_audit_log`** via `db/migrations/011_config_audit_log.sql`:
+
+```sql
+CREATE TABLE IF NOT EXISTS config_audit_log (
+    id         BIGSERIAL    PRIMARY KEY,
+    guild_id   BIGINT       NOT NULL,
+    changed_by TEXT         NOT NULL,   -- Discord user ID (JWT sub)
+    kind       TEXT         NOT NULL,   -- 'server_config' | 'feature' | 'global_config'
+    target     TEXT,                    -- feature name ou config key
+    patch      JSONB        NOT NULL DEFAULT '{}',
+    changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS cal_guild_idx ON config_audit_log (guild_id);
+CREATE INDEX IF NOT EXISTS cal_time_idx  ON config_audit_log (changed_at DESC);
+```
+
+9.2. **Escrever audit entry (best effort)** em todos os endpoints que mutam config:
+- `PATCH /config/{guild_id}` → kind `server_config`, patch = corpo da requisição
+- `PUT /features/{guild_id}/{feature}` → kind `feature`, target = feature name, patch = `{enabled: ...}`
+- `PATCH /global-config/{key}` → kind `global_config`, target = key
+
+9.3. **`GET /server/{guild_id}/audit`** em `api/routers/server.py`:
+- Requer admin
+- Paginação por `page`/`per_page`
+- Filtro opcional por `kind`
+
+9.4. **Audit ID como fingerprint** — response de PATCH/PUT inclui `audit_id` no campo `meta` para correlação com logs.
+
+**Critério de conclusão:** toda alteração de config via API tem registro auditável; `GET /server/{guild_id}/audit` retorna histórico correto; sem overhead perceptível (INSERT é fire-and-forget em conexão separada).
+
+---
+
 ## 7. Estratégia de Migração sem Quebrar Compatibilidade
 
 ### Princípio: Expand-and-Contract
@@ -769,7 +858,9 @@ Se qualquer fase precisar ser revertida:
 | 4 | server_feature_config | Médio | Estrutura para flags | Fase 3 |
 | 5 | Feature flags + validação | Médio-Alto | Observabilidade | Fase 4 |
 | 6 | Auth + NOTIFY completos | Baixo-Médio | Segurança | Fase 5 |
-| 7 | Contratos para painel web | Baixo | Habilitador | Fase 6 |
+| 7 | Dashboard unificado | Baixo | Habilitador | Fase 6 |
+| 8 | Feature flags restantes + health check | Baixo | Observabilidade | Fase 7 |
+| 9 | Auditoria de configuração | Baixo | Rastreabilidade | Fase 8 |
 
 **Condição mínima para o painel web funcionar:** Fases 0–6 concluídas. A Fase 7 é a entrega final de habilitação.
 

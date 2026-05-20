@@ -101,6 +101,9 @@ On `on_ready`, it posts/refreshes persistent embeds in fixed channels (status, c
 - `/features/{guild_id}` — lista features com estado `enabled` (requer admin).
 - `/features/{guild_id}/validation` — roda todos os validadores e retorna erros por feature (requer admin).
 - `/features/{guild_id}/{feature}` — PUT habilita/desabilita feature; emite `pg_notify('fenrir_cache', 'feature:{guild_id}:{feature}')` (requer admin).
+- `/server/{guild_id}` — GET retorna server_config + todas features com validação embutida + premium catalog (requer admin); endpoint unificado para o painel.
+- `/server/{guild_id}/audit` — GET histórico paginado de alterações de config (requer admin); filtro por `kind`.
+- `/config_status` slash command (admin only) — diagnóstico de configuração em embed, sem acesso direto ao DB.
 
 Important current-state note:
 - `require_admin` is applied on `antispam`, `antinuke`, `features`, `config` (PATCH), `items` (POST/PATCH/DELETE), `users` (PATCH premium), `global-config` (PATCH), and `premium` (PUT catalog) routers.

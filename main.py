@@ -170,6 +170,7 @@ class FenrirBot(commands.Bot):
 
         elif kind == "config":
             await self.reload_config()
+            await self._check_config_health()
 
         elif kind == "antispam":
             cog = self.get_cog("AntiSpam")
@@ -219,6 +220,28 @@ class FenrirBot(commands.Bot):
                     cog.user_data[uid_str].update(cached)
         except Exception as exc:
             log.warning("Falha ao invalidar cache do usuário %s: %s", user_id, exc)
+
+    async def _check_config_health(self) -> None:
+        """Roda validate_all contra server_config e loga warnings por feature com erros."""
+        if self.config is None:
+            return
+        try:
+            from db.validators import validate_all
+            all_errors = validate_all(self.config.to_dict())
+            for feature, errors in all_errors.items():
+                for err in errors:
+                    log.warning(
+                        "Config inválida [%s / %s]: %s — %s",
+                        feature, err.get("field"), err.get("code"), err.get("message"),
+                    )
+            ok = [f for f, e in all_errors.items() if not e]
+            bad = [f for f, e in all_errors.items() if e]
+            if bad:
+                log.warning("Features com config incompleta: %s", bad)
+            else:
+                log.info("Config health OK — todas as %d features válidas.", len(ok))
+        except Exception as exc:
+            log.warning("Falha ao verificar saúde da config: %s", exc)
 
     async def guard_channel(self, interaction: discord.Interaction) -> bool:
         """Verifica se o comando foi enviado no canal de comandos correto.
@@ -294,6 +317,7 @@ class FenrirBot(commands.Bot):
 
     async def on_ready(self):
         log.info("🤖 Bot conectado como %s (ID: %s)", self.user, self.user.id)
+        await self._check_config_health()
 
         await self.change_presence(
             activity=discord.Streaming(
