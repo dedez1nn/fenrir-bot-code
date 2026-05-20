@@ -34,6 +34,7 @@ _QUEUE_NAMES: dict[int, str] = {
 class RiotCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.feature_enabled: bool = True
         self.api_key = RIOT_API_KEY
         self.region = RIOT_REGION
         self.base_url = f"https://{self.region}.api.riotgames.com"
@@ -41,6 +42,22 @@ class RiotCog(commands.Cog):
         self.ddragon_version = None
         self.champion_data: dict[int, str] = {}
         self.champion_key_data: dict[int, str] = {}
+
+    async def cog_load(self) -> None:
+        from db.feature_config import load_feature_state_for_cog
+        self.feature_enabled = await load_feature_state_for_cog(self.bot, "riot")
+
+    async def reload_feature_state(self) -> None:
+        from db.feature_config import load_feature_state_for_cog
+        self.feature_enabled = await load_feature_state_for_cog(self.bot, "riot")
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if not self.feature_enabled:
+            await interaction.response.send_message(
+                "❌ Os comandos de Riot Games não estão habilitados neste servidor.", ephemeral=True
+            )
+            return False
+        return True
 
     # ─── HTTP ────────────────────────────────────────────────────────────────
 

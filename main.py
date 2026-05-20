@@ -35,6 +35,7 @@ _FEATURE_COG_MAP: dict[str, str] = {
     "member_logs":     "MemberLogs",
     "colors":          "EnviarCores",
     "adventures":      "AventuraCog",
+    "guilds":          "GuildSystem",
     "guild_raids":     "GuildAllianceRaidSystem",
     "antispam":        "AntiSpam",
     "antinuke":        "AntiNuke",
@@ -43,6 +44,9 @@ _FEATURE_COG_MAP: dict[str, str] = {
     "xp":              "XPCog",
     "economy":         "FenrirCoins",
     "premium":         "PixCog",
+    "riot":            "RiotCog",
+    "steam":           "SteamCog",
+    "gnews":           "GNewsCog",
 }
 
 

@@ -66,6 +66,45 @@ async def set_feature_enabled(pool, guild_id: int, feature: str, enabled: bool) 
         )
 
 
+async def get_feature_config(pool, guild_id: int, feature: str) -> dict:
+    """Retorna o config JSONB de uma feature para a guild. Retorna {} se não existir."""
+    if pool is None:
+        return {}
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT config FROM server_feature_config WHERE guild_id = $1 AND feature = $2",
+                guild_id,
+                feature,
+            )
+        return dict(row["config"]) if row and row["config"] else {}
+    except Exception as exc:
+        log.error("Erro ao carregar feature config %s/%s: %s", guild_id, feature, exc)
+        return {}
+
+
+async def load_feature_state_for_cog(bot, feature: str) -> bool:
+    """Helper para cog_load: lê feature enabled do DB do bot com fallback seguro."""
+    if bot.db is None:
+        return True
+    cfg = getattr(bot, "config", None)
+    guild_id = (cfg.get("guild_id") if cfg else None)
+    if not guild_id:
+        return True
+    return await is_feature_enabled(bot.db, guild_id, feature)
+
+
+async def load_feature_config_for_cog(bot, feature: str) -> dict:
+    """Helper para cog_load: lê feature config JSONB do DB do bot com fallback seguro."""
+    if bot.db is None:
+        return {}
+    cfg = getattr(bot, "config", None)
+    guild_id = (cfg.get("guild_id") if cfg else None)
+    if not guild_id:
+        return {}
+    return await get_feature_config(bot.db, guild_id, feature)
+
+
 async def set_feature_config(pool, guild_id: int, feature: str, config: dict) -> None:
     """Salva a config JSONB de uma feature para a guild."""
     async with pool.acquire() as conn:

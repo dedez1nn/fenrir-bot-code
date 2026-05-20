@@ -23,7 +23,24 @@ CATEGORIAS = [
 class GNewsCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.feature_enabled: bool = True
         self.api_key = GNEWS_API_KEY
+
+    async def cog_load(self) -> None:
+        from db.feature_config import load_feature_state_for_cog
+        self.feature_enabled = await load_feature_state_for_cog(self.bot, "gnews")
+
+    async def reload_feature_state(self) -> None:
+        from db.feature_config import load_feature_state_for_cog
+        self.feature_enabled = await load_feature_state_for_cog(self.bot, "gnews")
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if not self.feature_enabled:
+            await interaction.response.send_message(
+                "❌ Os comandos de notícias não estão habilitados neste servidor.", ephemeral=True
+            )
+            return False
+        return True
 
     async def _get(self, endpoint: str, params: dict) -> dict | None:
         params["token"] = self.api_key

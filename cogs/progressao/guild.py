@@ -18,8 +18,9 @@ class GuildSystem(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.use_db: bool = False
+        self.feature_enabled: bool = True
         self.ARQUIVO_GUILDS = "data/guilds_data.json"
-        
+
         self.xp_base = 500000
         self.recompensas_nivel = {
             1: {"banco": 0, "vantagens": "Guild básica"},
@@ -38,7 +39,7 @@ class GuildSystem(commands.Cog):
             14: {"banco": 4000000, "vantagens": "+25 slots de membros"},
             15: {"banco": 5000000, "vantagens": "Título Mítico"}
         }
-        
+
         self.planos_config = {
             "gratuito": {
                 "membros_max": 5,
@@ -74,6 +75,14 @@ class GuildSystem(commands.Cog):
             }
         }
 
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if not self.feature_enabled:
+            await interaction.response.send_message(
+                "❌ O sistema de guildas não está habilitado neste servidor.", ephemeral=True
+            )
+            return False
+        return True
+
     async def cog_load(self) -> None:
         self.use_db = self.bot.db is not None
         if self.bot.config:
@@ -89,6 +98,12 @@ class GuildSystem(commands.Cog):
             except Exception as exc:
                 log.error("GuildSystem: erro ao carregar guilds do DB: %s", exc)
                 self.bot._guilds_cache = {"raids_ativas": {}}
+        from db.feature_config import load_feature_state_for_cog
+        self.feature_enabled = await load_feature_state_for_cog(self.bot, "guilds")
+
+    async def reload_feature_state(self) -> None:
+        from db.feature_config import load_feature_state_for_cog
+        self.feature_enabled = await load_feature_state_for_cog(self.bot, "guilds")
 
     def calcular_xp_necessario(self, nivel: int) -> int:
         return int(self.xp_base * (2 ** (nivel - 1)))

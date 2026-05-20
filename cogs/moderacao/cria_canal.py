@@ -181,6 +181,7 @@ class VoiceCreator(commands.Cog):
         self.bot = bot
         self.main_channel_id = _DEFAULT_VOICE_CREATOR_CH
         self.feature_enabled: bool = True
+        self.channel_name_prefix: str = "🔊 Sala de"
         self.cleanup_loop.start()
 
     async def cog_load(self) -> None:
@@ -189,8 +190,10 @@ class VoiceCreator(commands.Cog):
         if self.bot.db is not None:
             guild_id = (cfg.get("guild_id") if cfg else None)
             if guild_id:
-                from db.feature_config import is_feature_enabled
+                from db.feature_config import is_feature_enabled, get_feature_config
                 self.feature_enabled = await is_feature_enabled(self.bot.db, guild_id, "voice_creator")
+                feat_cfg = await get_feature_config(self.bot.db, guild_id, "voice_creator")
+                self.channel_name_prefix = feat_cfg.get("channel_name_prefix") or "🔊 Sala de"
 
     async def reload_feature_state(self) -> None:
         await self.cog_load()
@@ -206,7 +209,7 @@ class VoiceCreator(commands.Cog):
     async def _cleanup_logic(self):
         for guild in self.bot.guilds:
             for channel in guild.voice_channels:
-                if channel.name.startswith("🔊 Sala de") and len(channel.members) == 0:
+                if channel.name.startswith(self.channel_name_prefix) and len(channel.members) == 0:
                     try:
                         await channel.delete()
                     except (discord.Forbidden, discord.HTTPException):
@@ -226,7 +229,7 @@ class VoiceCreator(commands.Cog):
 
 
             new_channel = await guild.create_voice_channel(
-                name=f"🔊 Sala de {member.display_name}",
+                name=f"{self.channel_name_prefix} {member.display_name}",
                 category=category,
             )
 
@@ -253,7 +256,7 @@ class VoiceCreator(commands.Cog):
     async def cleanup_loop(self):
         for guild in self.bot.guilds:
             for channel in guild.voice_channels:
-                if channel.name.startswith("🔊 Sala de") and len(channel.members) == 0:
+                if channel.name.startswith(self.channel_name_prefix) and len(channel.members) == 0:
                     try:
                         await channel.delete()
                     except discord.Forbidden:

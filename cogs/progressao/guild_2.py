@@ -924,8 +924,17 @@ class GuildAllianceRaidSystem(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.use_db: bool = False
+        self.feature_enabled: bool = True
         self.ARQUIVO_GUILDS = "data/guilds_data.json"
         self.verificar_raids.start()
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if not self.feature_enabled:
+            await interaction.response.send_message(
+                "❌ O sistema de raids/alianças não está habilitado neste servidor.", ephemeral=True
+            )
+            return False
+        return True
 
     @property
     def CANAL_RAIDS_ID(self) -> int:
@@ -942,6 +951,12 @@ class GuildAllianceRaidSystem(commands.Cog):
             except Exception as exc:
                 log.error("GuildAllianceRaidSystem: erro ao carregar guilds do DB: %s", exc)
                 self.bot._guilds_cache = {"raids_ativas": {}}
+        from db.feature_config import load_feature_state_for_cog
+        self.feature_enabled = await load_feature_state_for_cog(self.bot, "guild_raids")
+
+    async def reload_feature_state(self) -> None:
+        from db.feature_config import load_feature_state_for_cog
+        self.feature_enabled = await load_feature_state_for_cog(self.bot, "guild_raids")
 
     def carregar_dados(self) -> dict:
         if self.use_db:

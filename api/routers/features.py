@@ -1,12 +1,15 @@
-"""Endpoints para gerenciamento de feature flags por servidor (Phase 5-6).
+"""Endpoints para gerenciamento de feature flags por servidor (Phase 5-6, 11-12).
 
-GET  /features/{guild_id}              — lista todas as features com estado enabled
-GET  /features/{guild_id}/validation   — roda validate_all contra server_config atual
-PUT  /features/{guild_id}/{feature}    — habilita/desabilita feature + emite NOTIFY
+GET   /features/{guild_id}                      — lista todas as features com estado enabled
+GET   /features/{guild_id}/validation           — roda validate_all contra server_config atual
+PUT   /features/{guild_id}/{feature}            — habilita/desabilita feature + emite NOTIFY
+PATCH /features/{guild_id}/{feature}/config     — salva config JSONB de uma feature
+PUT   /features/{guild_id}/bulk                 — toggle múltiplas features em batch
 """
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, Dict, List
 
@@ -31,6 +34,19 @@ _KNOWN_FEATURES = {
 
 class FeatureToggle(BaseModel):
     enabled: bool
+
+
+class FeatureConfigPatch(BaseModel):
+    config: Dict[str, Any]
+
+
+class BulkFeatureItem(BaseModel):
+    feature: str
+    enabled: bool
+
+
+class BulkFeatureToggle(BaseModel):
+    features: List[BulkFeatureItem]
 
 
 @router.get("/{guild_id}", response_model=Dict[str, Any])
@@ -120,3 +136,98 @@ async def toggle_feature(
         "enabled": row["enabled"],
         "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
     }
+
+
+@router.patch("/{guild_id}/{feature}/config", response_model=Dict[str, Any])
+async def patch_feature_config(
+    guild_id: int,
+    feature: str,
+    body: FeatureConfigPatch,
+    user=Depends(require_admin),
+) -> Dict[str, Any]:
+    """Salva a config JSONB de uma feature para a guild. Emite NOTIFY ao bot."""
+    if feature not in _KNOWN_FEATURES:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Feature desconhecida: '{feature}'. Válidas: {sorted(_KNOWN_FEATURES)}",
+        )
+
+    async with api_db.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO server_feature_config (guild_id, feature, config, updated_at)
+            VALUES ($1, $2, $3::jsonb, NOW())
+            ON CONFLICT (guild_id, feature) DO UPDATE
+                SET config = EXCLUDED.config, updated_at = NOW()
+            RETURNING feature, enabled, config, updated_at
+            """,
+            guild_id,
+            feature,
+            json.dumps(body.config),
+        )
+
+    try:
+        async with api_db.acquire() as conn2:
+            await conn2.execute("SELECT pg_notify('fenrir_cache', $1)", f"feature:{guild_id}:{feature}")
+            await write_audit(conn2, guild_id, user, "feature_config", body.config, target=feature)
+    except Exception as exc:
+        log.warning("Falha ao enviar NOTIFY/audit feature_config: %s", exc)
+
+    return {
+        "guild_id": guild_id,
+        "feature": row["feature"],
+        "enabled": row["enabled"],
+        "config": row["config"],
+        "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
+    }
+
+
+@router.put("/{guild_id}/bulk", response_model=Dict[str, Any])
+async def bulk_toggle_features(
+    guild_id: int,
+    body: BulkFeatureToggle,
+    user=Depends(require_admin),
+) -> Dict[str, Any]:
+    """Habilita/desabilita múltiplas features em uma única operação. Emite NOTIFY para cada uma."""
+    unknown = {item.feature for item in body.features} - _KNOWN_FEATURES
+    if unknown:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Features desconhecidas: {sorted(unknown)}",
+        )
+
+    results = []
+    async with api_db.acquire() as conn:
+        for item in body.features:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO server_feature_config (guild_id, feature, enabled, updated_at)
+                VALUES ($1, $2, $3, NOW())
+                ON CONFLICT (guild_id, feature) DO UPDATE
+                    SET enabled = EXCLUDED.enabled, updated_at = NOW()
+                RETURNING feature, enabled, updated_at
+                """,
+                guild_id,
+                item.feature,
+                item.enabled,
+            )
+            results.append({
+                "feature": row["feature"],
+                "enabled": row["enabled"],
+                "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
+            })
+
+    try:
+        async with api_db.acquire() as conn2:
+            for item in body.features:
+                await conn2.execute(
+                    "SELECT pg_notify('fenrir_cache', $1)", f"feature:{guild_id}:{item.feature}"
+                )
+            await write_audit(
+                conn2, guild_id, user, "feature_bulk",
+                {"features": [{"feature": i.feature, "enabled": i.enabled} for i in body.features]},
+            )
+    except Exception as exc:
+        log.warning("Falha ao enviar NOTIFY/audit bulk features: %s", exc)
+
+    return {"guild_id": guild_id, "results": results}

@@ -200,6 +200,15 @@ class FenrirCoins(commands.Cog):
         self.coins_por_voz = 15000
         self.daily_coins = 10000
         self.streak_bonus = 10000
+        self.feature_enabled: bool = True
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if not self.feature_enabled:
+            await interaction.response.send_message(
+                "❌ O sistema de economia não está habilitado neste servidor.", ephemeral=True
+            )
+            return False
+        return True
 
     async def cog_load(self):
         self.use_db = self.bot.db is not None
@@ -220,6 +229,13 @@ class FenrirCoins(commands.Cog):
             self.coins_por_voz      = self.bot.config.get("coins_por_voz")             or self.coins_por_voz
             self.daily_coins        = self.bot.config.get("daily_coins")               or self.daily_coins
             self.streak_bonus       = self.bot.config.get("daily_streak_bonus")        or self.streak_bonus
+
+        from db.feature_config import load_feature_state_for_cog
+        self.feature_enabled = await load_feature_state_for_cog(self.bot, "economy")
+
+    async def reload_feature_state(self) -> None:
+        from db.feature_config import load_feature_state_for_cog
+        self.feature_enabled = await load_feature_state_for_cog(self.bot, "economy")
 
     def carregar_dados(self):
         if os.path.exists(self.ARQUIVO_DADOS):

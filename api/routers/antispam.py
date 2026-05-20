@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from .. import db as api_db
+from ..audit import write_audit
 from .auth import require_admin
 
 log = logging.getLogger(__name__)
@@ -32,8 +33,8 @@ async def get_antispam_config(guild_id: int) -> Dict[str, Any]:
     return dict(row)
 
 
-@router.patch("/config/{guild_id}", dependencies=[Depends(require_admin)])
-async def patch_antispam_config(guild_id: int, body: Dict[str, Any]) -> Dict[str, Any]:
+@router.patch("/config/{guild_id}")
+async def patch_antispam_config(guild_id: int, body: Dict[str, Any], user=Depends(require_admin)) -> Dict[str, Any]:
     """Atualiza a configuração do antispam.
 
     Campos aceitos:
@@ -85,15 +86,12 @@ async def patch_antispam_config(guild_id: int, body: Dict[str, Any]) -> Dict[str
             "SELECT * FROM antispam_config WHERE guild_id = $1", guild_id
         )
 
-    # Notifica o bot para recarregar a config do antispam
     try:
-        async with api_db.acquire() as conn:
-            await conn.execute(
-                "SELECT pg_notify('fenrir_cache', $1)",
-                f"antispam:{guild_id}",
-            )
+        async with api_db.acquire() as conn2:
+            await conn2.execute("SELECT pg_notify('fenrir_cache', $1)", f"antispam:{guild_id}")
+            await write_audit(conn2, guild_id, user, "antispam", body)
     except Exception as exc:
-        log.warning("Falha ao enviar NOTIFY antispam: %s", exc)
+        log.warning("Falha ao enviar NOTIFY/audit antispam: %s", exc)
 
     return dict(row)
 

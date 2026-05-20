@@ -6,6 +6,7 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from ..audit import write_audit
 from ..db import acquire
 from .auth import require_admin
 
@@ -28,7 +29,7 @@ async def list_global_config(
 async def update_global_config(
     key: str,
     body: Dict[str, Any],
-    _admin: dict = Depends(require_admin),
+    user: dict = Depends(require_admin),
 ) -> Dict[str, Any]:
     value = body.get("value")
     if value is None:
@@ -45,6 +46,7 @@ async def update_global_config(
                 __import__("json").dumps(value),
             )
             row = await conn.fetchrow("SELECT key, value FROM global_config WHERE key = $1", key)
+            await write_audit(conn, 0, user, "global_config", {"key": key, "value": value})
         return {"key": row["key"], "value": row["value"]}
     except Exception as exc:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))

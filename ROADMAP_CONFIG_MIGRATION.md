@@ -538,6 +538,82 @@ CREATE INDEX IF NOT EXISTS cal_time_idx  ON config_audit_log (changed_at DESC);
 
 ---
 
+### ✅ Fase 10 — Feature Flags via `interaction_check` nas Cogs Restantes — CONCLUÍDA
+
+**Objetivo:** Cobrir todos os cogs com slash commands com feature flag, usando `interaction_check` como ponto único de controle por cog.
+
+#### Tarefas
+
+10.1. **Helper `load_feature_state_for_cog(bot, feature)` em `db/feature_config.py`**
+Centraliza a lógica de leitura de feature flag nos cogs, eliminando código duplicado.
+
+10.2. **Cogs a receber `feature_enabled` + `interaction_check` + `reload_feature_state`:**
+
+| Cog | Feature key | Tem cog_load? |
+|---|---|---|
+| `FenrirCoins` | `economy` | Sim, adicionar ao fim |
+| `GuildSystem` | `guilds` | Sim, adicionar ao fim |
+| `GuildAllianceRaidSystem` | `guild_raids` | Sim, adicionar ao fim |
+| `RiotCog` | `riot` | Não, criar |
+| `SteamCog` | `steam` | Não, criar |
+| `GNewsCog` | `gnews` | Não, criar |
+
+10.3. **`interaction_check(interaction)` em cada cog:**
+Retorna `False` e responde com mensagem ephemeral quando `feature_enabled=False`, bloqueando todos os slash commands do cog sem necessidade de guards por comando.
+
+10.4. **Atualizar `_FEATURE_COG_MAP` em `main.py`** para mapear `guilds`, `riot`, `steam`, `gnews`.
+
+**Critério de conclusão:** 100% das cogs com slash commands respeitam feature flag; `PUT /features/{guild_id}/{feature}` + NOTIFY desativa qualquer cog dinamicamente sem restart.
+
+---
+
+### ✅ Fase 11 — Feature Config JSONB por Feature — CONCLUÍDA
+
+**Objetivo:** Usar a coluna `config JSONB` de `server_feature_config` para armazenar configurações simples por feature, evitando novas colunas em `server_config` para parâmetros feature-específicos.
+
+#### Tarefas
+
+11.1. **`get_feature_config(pool, guild_id, feature) -> dict` em `db/feature_config.py`**
+
+11.2. **`PATCH /features/{guild_id}/{feature}/config`** — mescla com config existente via `||` JSONB; emite NOTIFY `feature:` e grava audit.
+
+11.3. **Cogs que leem feature config:**
+
+| Cog | Chave lida | Efeito |
+|---|---|---|
+| `VoiceCreator` | `channel_name_prefix` (default `"🔊 Sala de"`) | Nome dos canais criados |
+| `XPCog` | `blacklisted_channel_ids` (default `[]`) | Canais onde XP não é ganho |
+| `MemberLogs` | `welcome_image_url` (default: CDN original) | Imagem no embed de boas-vindas |
+
+11.4. **`reload_feature_state()` recarrega config JSONB** além do flag `enabled`.
+
+**Critério de conclusão:** feature config é editável via API e aplicada pelo bot sem restart; `PATCH /features/{guild_id}/voice_creator/config` com `{"channel_name_prefix": "🎮 Sala de"}` muda o comportamento imediatamente.
+
+---
+
+### ✅ Fase 12 — Audit Completo + Bulk Feature Toggle — CONCLUÍDA
+
+**Objetivo:** Cobrir todos os endpoints mutantes com auditoria e adicionar operação em lote para features.
+
+#### Tarefas
+
+12.1. **Audit nos endpoints restantes:**
+- `PATCH /antispam/config/{guild_id}` → kind `antispam_config`
+- `PATCH /antinuke/config/{guild_id}` → kind `antinuke_config`
+- `PATCH /global-config/{key}` → kind `global_config`, target = key, guild_id = 0
+
+12.2. **`PUT /features/{guild_id}/bulk`** — toggle múltiplas features de uma vez:
+```json
+{"tickets": true, "voice_creator": false, "xp": true}
+```
+Emite um NOTIFY por feature alterada e grava um audit entry por feature.
+
+12.3. **`dependencies=[Depends(require_admin)]` → `user=Depends(require_admin)`** nos endpoints de antispam e antinuke para expor o usuário ao audit.
+
+**Critério de conclusão:** toda mutação de config (antispam, antinuke, global, bulk features) aparece em `GET /server/{guild_id}/audit`; bulk toggle emite NOTIFY para cada feature afetada.
+
+---
+
 ## 7. Estratégia de Migração sem Quebrar Compatibilidade
 
 ### Princípio: Expand-and-Contract
@@ -861,6 +937,9 @@ Se qualquer fase precisar ser revertida:
 | 7 | Dashboard unificado | Baixo | Habilitador | Fase 6 |
 | 8 | Feature flags restantes + health check | Baixo | Observabilidade | Fase 7 |
 | 9 | Auditoria de configuração | Baixo | Rastreabilidade | Fase 8 |
+| 10 | Feature flags via interaction_check | Baixo | Cobertura total | Fase 9 |
+| 11 | Feature config JSONB por feature | Baixo | Flexibilidade | Fase 10 |
+| 12 | Audit completo + bulk toggle | Baixo | Rastreabilidade | Fase 11 |
 
 **Condição mínima para o painel web funcionar:** Fases 0–6 concluídas. A Fase 7 é a entrega final de habilitação.
 

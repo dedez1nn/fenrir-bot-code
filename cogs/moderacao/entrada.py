@@ -12,14 +12,17 @@ class MemberLogs(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.feature_enabled: bool = True
+        self.welcome_image_url: str | None = None
 
     async def cog_load(self) -> None:
         if self.bot.db is not None:
             cfg = getattr(self.bot, "config", None)
             guild_id = (cfg.get("guild_id") if cfg else None)
             if guild_id:
-                from db.feature_config import is_feature_enabled
+                from db.feature_config import is_feature_enabled, get_feature_config
                 self.feature_enabled = await is_feature_enabled(self.bot.db, guild_id, "member_logs")
+                feat_cfg = await get_feature_config(self.bot.db, guild_id, "member_logs")
+                self.welcome_image_url = feat_cfg.get("welcome_image_url") or None
 
     async def reload_feature_state(self) -> None:
         await self.cog_load()
@@ -67,7 +70,7 @@ class MemberLogs(commands.Cog):
                 timestamp=discord.utils.utcnow()
             )
             embed.set_author(name="🐺 Fenrir BOT", icon_url="https://cdn.discordapp.com/attachments/1156734159457353848/1426287031922720868/Design_sem_nome_15.png?ex=68eaaccf&is=68e95b4f&hm=8dcb75de780ad5d8955bcd22d8c12bce3e8c5c92f2f18b6dae5006576f869e6a&")
-            embed.set_image(url="https://cdn.discordapp.com/attachments/1156734159457353848/1426285299817779200/SEJA_BEM-VINDO_3.gif?ex=68eaab32&is=68e959b2&hm=b0aa37e920d8651f9095bd9e8c1815882332f9dadb95f0c8d4167199238d354f&")
+            embed.set_image(url=self.welcome_image_url or "https://cdn.discordapp.com/attachments/1156734159457353848/1426285299817779200/SEJA_BEM-VINDO_3.gif?ex=68eaab32&is=68e959b2&hm=b0aa37e920d8651f9095bd9e8c1815882332f9dadb95f0c8d4167199238d354f&")
             embed.set_thumbnail(url=member.display_avatar.url)
             embed.set_footer(text=f"ID do usuário: {member.id}")
             embed.set_footer(text="Entrada registrada automaticamente — Fenrir BOT")

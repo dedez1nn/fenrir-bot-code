@@ -17,8 +17,11 @@ from .migrate import apply_migrations, import_legacy_json
 from .feature_config import (
     is_feature_enabled,
     get_all_features,
+    get_feature_config,
     set_feature_enabled,
     set_feature_config,
+    load_feature_state_for_cog,
+    load_feature_config_for_cog,
 )
 from .validators import validate_all, VALIDATORS
 
@@ -37,8 +40,11 @@ __all__ = [
     "import_legacy_json",
     "is_feature_enabled",
     "get_all_features",
+    "get_feature_config",
     "set_feature_enabled",
     "set_feature_config",
+    "load_feature_state_for_cog",
+    "load_feature_config_for_cog",
     "validate_all",
     "VALIDATORS",
 ]

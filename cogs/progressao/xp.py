@@ -333,6 +333,7 @@ class XPCog(commands.Cog):
         self.bonus_coins_por_nivel = 50000
 
         self.dobro_xp_ativos = {}
+        self.blacklisted_channel_ids: set = set()
 
         _default_roles = {
             2: 1427356351516119180,
@@ -384,16 +385,20 @@ class XPCog(commands.Cog):
             cfg = getattr(self.bot, "config", None)
             guild_id = (cfg.get("guild_id") if cfg else None)
             if guild_id:
-                from db.feature_config import is_feature_enabled
+                from db.feature_config import is_feature_enabled, get_feature_config
                 self.feature_enabled = await is_feature_enabled(self.bot.db, guild_id, "xp")
+                feat_cfg = await get_feature_config(self.bot.db, guild_id, "xp")
+                self.blacklisted_channel_ids = set(feat_cfg.get("blacklisted_channel_ids", []))
 
     async def reload_feature_state(self) -> None:
         if self.bot.db is not None:
             cfg = getattr(self.bot, "config", None)
             guild_id = (cfg.get("guild_id") if cfg else None)
             if guild_id:
-                from db.feature_config import is_feature_enabled
+                from db.feature_config import is_feature_enabled, get_feature_config
                 self.feature_enabled = await is_feature_enabled(self.bot.db, guild_id, "xp")
+                feat_cfg = await get_feature_config(self.bot.db, guild_id, "xp")
+                self.blacklisted_channel_ids = set(feat_cfg.get("blacklisted_channel_ids", []))
 
     def _restaurar_dobro_xp(self):
         agora = time.time()
@@ -1010,6 +1015,8 @@ class XPCog(commands.Cog):
         if not self.feature_enabled:
             return
         if message.author.bot or not message.guild:
+            return
+        if message.channel.id in self.blacklisted_channel_ids:
             return
 
         user_id = str(message.author.id)
