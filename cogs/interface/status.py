@@ -4,16 +4,23 @@ from discord import app_commands
 from datetime import datetime
 
 
+_DEFAULT_STATUS_CHANGELOG_CH = 1427311999381147708
+
+
 class StatusCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.status_canal = 1427311999381147708
+
+    def _changelog_channel_id(self) -> int:
+        cfg = getattr(self.bot, "config", None)
+        return (cfg.get("status_changelog_channel_id") if cfg else None) or _DEFAULT_STATUS_CHANGELOG_CH
 
     async def status(self, canal):
-        if canal is None and hasattr(self, 'status_canal'):
-            canal = self.bot.get_channel(self.status_canal)
-        
-        canal_changelog = self.bot.get_channel(1427311999381147708)
+        if canal is None:
+            status_id = getattr(self.bot.config, "status_channel_id", None) if self.bot.config else None
+            canal = self.bot.get_channel(status_id) if status_id else None
+
+        canal_changelog = self.bot.get_channel(self._changelog_channel_id())
         embed = discord.Embed(
             title="🤖 Status do Bot",
             description="Olá, pessoal! Estou **on-line**, interagindo\n"

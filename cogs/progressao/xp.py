@@ -369,12 +369,15 @@ class XPCog(commands.Cog):
                 self.use_db = False
 
         if self.bot.config:
-            self.xp_por_mensagem = self.bot.config.get("xp_por_mensagem") or self.xp_por_mensagem
-            self.voice_xp_amount = self.bot.config.get("xp_por_voz") or self.voice_xp_amount
-            self.voice_xp_interval = self.bot.config.get("voice_xp_interval_s") or self.voice_xp_interval
+            self.xp_por_mensagem       = self.bot.config.get("xp_por_mensagem")       or self.xp_por_mensagem
+            self.xp_por_vitoria        = self.bot.config.get("xp_por_vitoria")        or self.xp_por_vitoria
+            self.voice_xp_amount       = self.bot.config.get("xp_por_voz")            or self.voice_xp_amount
+            self.voice_xp_interval     = self.bot.config.get("voice_xp_interval_s")   or self.voice_xp_interval
             self.bonus_coins_por_nivel = self.bot.config.get("bonus_coins_por_nivel") or self.bonus_coins_por_nivel
-            self.coins_por_mensagem = self.bot.config.get("coins_por_mensagem") or self.coins_por_mensagem
-            self.coins_por_voz = self.bot.config.get("coins_por_voz") or self.coins_por_voz
+            self.coins_por_mensagem    = self.bot.config.get("coins_por_mensagem")    or self.coins_por_mensagem
+            self.coins_por_voz         = self.bot.config.get("coins_por_voz")         or self.coins_por_voz
+            self.coins_por_vitoria     = self.bot.config.get("coins_por_vitoria")     or self.coins_por_vitoria
+            self.cooldown_segundos     = self.bot.config.get("xp_message_cooldown_s") or self.cooldown_segundos
 
     def _restaurar_dobro_xp(self):
         agora = time.time()

@@ -3,11 +3,19 @@ from discord.ext import commands
 import json
 import os
 
+_DEFAULT_JOIN_LOG_CH  = 1426206240467320983
+_DEFAULT_HELP_CH      = 1426274988046155787
+_DEFAULT_LEAVE_LOG_CH = 1427472688665854133
+
+
 class MemberLogs(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.log_channel_id = 1426206240467320983
-        
+
+    def _cfg(self, key: str, default: int) -> int:
+        c = getattr(self.bot, "config", None)
+        return (c.get(key) if c else None) or default
+
     def carregar_xp(self):
         if os.path.exists(self.xp_file):
             with open(self.xp_file, "r", encoding="utf-8") as f:
@@ -20,11 +28,11 @@ class MemberLogs(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
-        channel = member.guild.get_channel(self.log_channel_id)
+        channel = member.guild.get_channel(self._cfg("member_join_log_channel_id", _DEFAULT_JOIN_LOG_CH))
         _cfg = getattr(self.bot, "config", None)
         _tickets_id = _cfg.get("tickets_channel_id") if _cfg else None
         ticket = member.guild.get_channel(_tickets_id) if _tickets_id else None
-        duvidas = member.guild.get_channel(1426274988046155787)
+        duvidas = member.guild.get_channel(self._cfg("help_channel_id", _DEFAULT_HELP_CH))
 
         if channel:
             embed = discord.Embed(
@@ -48,7 +56,7 @@ class MemberLogs(commands.Cog):
             
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
-        canal = self.bot.get_channel(1427472688665854133)
+        canal = self.bot.get_channel(self._cfg("member_leave_log_channel_id", _DEFAULT_LEAVE_LOG_CH))
         if canal:
             embed = discord.Embed(
                 title="👋 Saída de Membro!",

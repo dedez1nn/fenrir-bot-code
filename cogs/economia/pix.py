@@ -14,6 +14,7 @@ import os
 load_dotenv()
 
 from repositories import users as users_repo
+from repositories import premium as premium_repo
 
 log = logging.getLogger(__name__)
 
@@ -57,6 +58,19 @@ class PixCog(commands.Cog):
 
     async def cog_load(self):
         self.use_db = self.bot.db is not None
+        if self.use_db:
+            try:
+                plans = await premium_repo.get_all(self.bot.db)
+                if plans:
+                    self.planos    = {p["plan_key"]: float(p["price_brl"]) for p in plans if p["price_brl"] is not None}
+                    self.cargos    = {p["plan_key"]: p["role_id"] for p in plans if p["role_id"]}
+                    self.recompensas = {
+                        p["plan_key"]: {"coins": p["coins_reward"], "xp": p["xp_reward"]}
+                        for p in plans
+                    }
+                    log.info("PixCog: catálogo premium carregado do DB (%d planos).", len(plans))
+            except Exception as exc:
+                log.warning("PixCog: falha ao carregar premium_catalog, usando defaults: %s", exc)
 
     # ─── grant premium via webhook (chamado pelo bot após NOTIFY) ─────────────
 

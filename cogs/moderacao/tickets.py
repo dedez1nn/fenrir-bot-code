@@ -20,37 +20,32 @@ class TicketView(discord.ui.View):
     async def criar_ticket(self, interaction: discord.Interaction, tipo: str):
         try:
             await interaction.response.defer(ephemeral=True)
-            
+
+            cfg = getattr(interaction.client, "config", None)
             servidor = interaction.guild
             usuario = interaction.user
-            
-            categorias = {
-                "suporte": 1426304224429608990,
-                "doacao": 1426306944204804146
-            }
-            
-            if tipo not in categorias or not categorias[tipo]:
+
+            cat_key = "ticket_support_category_id" if tipo == "suporte" else "ticket_donation_category_id"
+            cat_id = (cfg.get(cat_key) if cfg else None)
+            if not cat_id:
                 await interaction.followup.send("❌ Categoria não configurada para este tipo de ticket!", ephemeral=True)
                 return
-            
-            categoria = discord.utils.get(servidor.categories, id=categorias[tipo])
+
+            categoria = discord.utils.get(servidor.categories, id=cat_id)
             if not categoria:
                 await interaction.followup.send("❌ Categoria não encontrada!", ephemeral=True)
                 return
-            
+
             # Verificar tickets existentes do usuário
             for canal in categoria.channels:
                 if f"{tipo}-{usuario.name}".lower() in canal.name.lower():
                     await interaction.followup.send(f"❌ Você já tem um ticket de {tipo} aberto: {canal.mention}", ephemeral=True)
                     return
-            
+
             nome_canal = f"{tipo}-{usuario.name}"
-            
-            id_fundador = 1426202850769244301
-            id_developer = 1426203167049121894
-            
-            cargo_fundador = servidor.get_role(id_fundador)
-            cargo_developer = servidor.get_role(id_developer)
+
+            staff_ids = (cfg.get("ticket_staff_role_ids") or []) if cfg else [1426202850769244301, 1426203167049121894]
+            staff_roles = [r for r in (servidor.get_role(rid) for rid in staff_ids) if r]
             
             overwrites = {
                 servidor.default_role: discord.PermissionOverwrite(view_channel=False),
@@ -72,17 +67,8 @@ class TicketView(discord.ui.View):
                 )
             }
 
-            if cargo_fundador:
-                overwrites[cargo_fundador] = discord.PermissionOverwrite(
-                    view_channel=True,
-                    send_messages=True,
-                    manage_messages=True,
-                    read_message_history=True,
-                    manage_channels=True
-                )
-
-            if cargo_developer:
-                overwrites[cargo_developer] = discord.PermissionOverwrite(
+            for staff_role in staff_roles:
+                overwrites[staff_role] = discord.PermissionOverwrite(
                     view_channel=True,
                     send_messages=True,
                     manage_messages=True,
@@ -255,7 +241,8 @@ class TicketCog(commands.Cog):
     async def enviar_transcript_canal_logs(self, canal_ticket: discord.TextChannel, transcript: str, usuario_fechou: discord.Member, usuario_abriu: discord.Member):
         nome_arquivo = f"transcript_{canal_ticket.name}.txt"
         try:
-            canal_logs_id = 1426323866963410985
+            _cfg = getattr(self.bot, "config", None)
+            canal_logs_id = (_cfg.get("ticket_log_channel_id") if _cfg else None) or 1426323866963410985
             canal_logs = canal_ticket.guild.get_channel(canal_logs_id)
             
             if not canal_logs:
@@ -299,27 +286,24 @@ class FecharTicketButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         try:
             canal = interaction.channel
-            
-            id_fundador = 1426202850769244301
-            id_developer = 1426203167049121894
-            
+
+            cfg = getattr(interaction.client, "config", None)
+            staff_ids = set((cfg.get("ticket_staff_role_ids") or []) if cfg else [1426202850769244301, 1426203167049121894])
+
             tem_permissao = False
-            
+
             usuario_ticket = None
             for member in interaction.guild.members:
                 if f"-{member.name}" in canal.name or f"-{member.display_name}" in canal.name:
                     usuario_ticket = member
                     break
-            
+
             if usuario_ticket and usuario_ticket.id == interaction.user.id:
                 tem_permissao = True
-            
-            if any(role.id == id_fundador for role in interaction.user.roles):
+
+            if any(role.id in staff_ids for role in interaction.user.roles):
                 tem_permissao = True
-            
-            if any(role.id == id_developer for role in interaction.user.roles):
-                tem_permissao = True
-            
+
             if interaction.user.guild_permissions.administrator:
                 tem_permissao = True
             

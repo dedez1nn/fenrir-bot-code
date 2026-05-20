@@ -76,6 +76,11 @@ class GuildSystem(commands.Cog):
 
     async def cog_load(self) -> None:
         self.use_db = self.bot.db is not None
+        if self.bot.config:
+            self.xp_base = self.bot.config.get("guild_xp_base") or self.xp_base
+            db_rewards = self.bot.config.get("guild_level_rewards") or {}
+            if db_rewards:
+                self.recompensas_nivel = {int(k): v for k, v in db_rewards.items()}
         if self.use_db and not hasattr(self.bot, "_guilds_cache"):
             try:
                 self.bot._guilds_cache = await guilds_repo.build_full_data(self.bot.db)
@@ -1432,9 +1437,11 @@ class GuildSystem(commands.Cog):
                 await interaction.followup.send("❌ Você não pode raidar sua própria guild!", ephemeral=True)
                 return
 
+            _cfg = getattr(self.bot, "config", None)
+            _raid_cd = (_cfg.get("guild_raid_cooldown_s") if _cfg else None) or 86400
             ultima_raid = guild_alvo_data.get("ultima_raid", 0)
-            if time.time() - ultima_raid < 86400:
-                tempo_restante = 86400 - (time.time() - ultima_raid)
+            if time.time() - ultima_raid < _raid_cd:
+                tempo_restante = _raid_cd - (time.time() - ultima_raid)
                 horas = int(tempo_restante // 3600)
                 minutos = int((tempo_restante % 3600) // 60)
                 await interaction.followup.send(f"❌ Esta guild foi raidada recentemente! Tente novamente em {horas}h {minutos}m", ephemeral=True)

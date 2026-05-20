@@ -64,6 +64,23 @@ class AventuraCog(commands.Cog):
 
     async def cog_load(self) -> None:
         self.use_db = self.bot.db is not None
+        if self.bot.config:
+            ch = self.bot.config.get("adventure_chances") or {}
+            rw = self.bot.config.get("adventure_rewards") or {}
+            if ch:
+                self.CHANCE_VITORIA_COMBATE      = (ch.get("vitoria_combate_min", 30), ch.get("vitoria_combate_max", 50))
+                self.CHANCE_MACHUCADO_VITORIA     = (ch.get("machucado_vitoria_min", 40), ch.get("machucado_vitoria_max", 60))
+                self.CHANCE_FURTIVIDADE           = ch.get("chance_furtividade", 50)
+            if rw:
+                self.PENALIDADE_FURTIVIDADE_FALHA  = (rw.get("penalidade_furtividade_min", 750), rw.get("penalidade_furtividade_max", 1500))
+                self.RECOMPENSA_FURTIVIDADE        = (rw.get("recompensa_furtividade_min", 1000), rw.get("recompensa_furtividade_max", 2000))
+                self.RECOMPENSA_TESOURO            = (rw.get("recompensa_tesouro_min", 1000), rw.get("recompensa_tesouro_max", 3000))
+                self.RECOMPENSA_VITORIA_ILESO      = (rw.get("recompensa_vitoria_ileso_min", 800), rw.get("recompensa_vitoria_ileso_max", 1500))
+                self.RECOMPENSA_VITORIA_MACHUCADO  = (rw.get("recompensa_vitoria_machucado_min", 400), rw.get("recompensa_vitoria_machucado_max", 750))
+                self.XP_VITORIA_ILESO              = rw.get("xp_vitoria_ileso", 3000)
+                self.XP_VITORIA_MACHUCADO          = rw.get("xp_vitoria_machucado", 1500)
+                self.XP_TESOURO                    = rw.get("xp_tesouro", 4000)
+                self.XP_FURTIVIDADE                = rw.get("xp_furtividade", 2000)
         if self.use_db:
             log.info("AventuraCog: modo DB ativo")
 
@@ -353,7 +370,9 @@ class AventuraCog(commands.Cog):
 
             await interaction.response.send_message(embed=embed)
 
-            canal_log = self.aventura_cog.bot.get_channel(1428872885216481432)
+            _cfg = getattr(self.aventura_cog.bot, "config", None)
+            _log_id = (_cfg.get("adventure_log_channel_id") if _cfg else None) or 1428872885216481432
+            canal_log = self.aventura_cog.bot.get_channel(_log_id)
             if canal_log:
                 if vitoria:
                     resultado = "Vitória Ileso" if not machucado else "Vitória com Ferimentos"
@@ -424,7 +443,9 @@ class AventuraCog(commands.Cog):
 
             await interaction.response.send_message(embed=embed)
 
-            canal_log = self.aventura_cog.bot.get_channel(1428872885216481432)
+            _cfg = getattr(self.aventura_cog.bot, "config", None)
+            _log_id = (_cfg.get("adventure_log_channel_id") if _cfg else None) or 1428872885216481432
+            canal_log = self.aventura_cog.bot.get_channel(_log_id)
             if canal_log:
                 embed_log = discord.Embed(
                     title=f"🌌 Aventura - {self.situacao['nome']}",
@@ -496,7 +517,9 @@ class AventuraCog(commands.Cog):
 
             await interaction.response.send_message(embed=embed)
 
-            canal_log = self.aventura_cog.bot.get_channel(1428872885216481432)
+            _cfg = getattr(self.aventura_cog.bot, "config", None)
+            _log_id = (_cfg.get("adventure_log_channel_id") if _cfg else None) or 1428872885216481432
+            canal_log = self.aventura_cog.bot.get_channel(_log_id)
             if canal_log:
                 embed_log = discord.Embed(
                     title=f"🌌 Aventura - {self.situacao['nome']}",

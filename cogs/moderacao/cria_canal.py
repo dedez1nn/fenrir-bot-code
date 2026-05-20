@@ -173,11 +173,18 @@ class VoiceControlView(discord.ui.View):
             await interaction.response.send_message("✅ Sala excluída.", ephemeral=True)
 
 
+_DEFAULT_VOICE_CREATOR_CH = 1429479982014660712
+
+
 class VoiceCreator(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.main_channel_id = 1429479982014660712
+        self.main_channel_id = _DEFAULT_VOICE_CREATOR_CH
         self.cleanup_loop.start()
+
+    async def cog_load(self) -> None:
+        cfg = getattr(self.bot, "config", None)
+        self.main_channel_id = (cfg.get("voice_creator_channel_id") if cfg else None) or _DEFAULT_VOICE_CREATOR_CH
 
     def cog_unload(self):
         self.cleanup_loop.cancel()

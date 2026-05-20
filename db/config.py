@@ -20,6 +20,12 @@ log = logging.getLogger(__name__)
 _TTL_SECONDS = 300
 
 
+def set_config_ttl(seconds: int) -> None:
+    """Atualiza o TTL do cache de server_config (chamado pelo main após carregar global_config)."""
+    global _TTL_SECONDS
+    _TTL_SECONDS = max(30, int(seconds))
+
+
 class ServerConfig:
     """Wrapper imutável (do ponto de vista do bot) sobre uma row de server_config."""
 

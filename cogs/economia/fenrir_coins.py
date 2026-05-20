@@ -215,10 +215,11 @@ class FenrirCoins(commands.Cog):
                 self.use_db = False
 
         if self.bot.config:
-            self.coins_por_mensagem = self.bot.config.get("coins_por_mensagem") or self.coins_por_mensagem
-            self.coins_por_voz = self.bot.config.get("coins_por_voz") or self.coins_por_voz
-            self.daily_coins = self.bot.config.get("daily_coins") or self.daily_coins
-            self.streak_bonus = self.bot.config.get("daily_streak_bonus") or self.streak_bonus
+            self.coins_por_mensagem = self.bot.config.get("coins_por_mensagem")        or self.coins_por_mensagem
+            self.cooldown_mensagem  = self.bot.config.get("coins_message_cooldown_s")  or self.cooldown_mensagem
+            self.coins_por_voz      = self.bot.config.get("coins_por_voz")             or self.coins_por_voz
+            self.daily_coins        = self.bot.config.get("daily_coins")               or self.daily_coins
+            self.streak_bonus       = self.bot.config.get("daily_streak_bonus")        or self.streak_bonus
 
     def carregar_dados(self):
         if os.path.exists(self.ARQUIVO_DADOS):

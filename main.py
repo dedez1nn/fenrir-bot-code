@@ -13,8 +13,10 @@ from db import (
     close_pool,
     import_legacy_json,
     init_pool,
+    load_global_config,
     load_server_config,
     refresh_server_config,
+    set_config_ttl,
 )
 
 logging.basicConfig(
@@ -48,6 +50,7 @@ class FenrirBot(commands.Bot):
         # Atributos populados em setup_hook; cogs devem checar `is not None`.
         self.db = None
         self.config = None
+        self.global_config = None
         # Callback armazenado para poder remover o listener no shutdown
         self._cache_notify_cb = None
 
@@ -75,17 +78,26 @@ class FenrirBot(commands.Bot):
         except Exception as exc:
             log.error("Falha ao importar JSONs legados: %s", exc)
 
-        self.config = await load_server_config(self.db, GUILD_ID)
+        self.global_config = await load_global_config(self.db)
+        ttl = self.global_config.get("server_config_ttl_s", 300)
+        set_config_ttl(ttl)
+        log.info("global_config carregada (TTL=%ss).", ttl)
+
+        guild_id = self.global_config.get("primary_guild_id") or GUILD_ID
+        self.config = await load_server_config(self.db, guild_id)
         if self.config is None:
-            log.warning("server_config não carregada para guild %s.", GUILD_ID)
+            log.warning("server_config não carregada para guild %s.", guild_id)
         else:
-            log.info("server_config carregada (guild %s).", GUILD_ID)
+            log.info("server_config carregada (guild %s).", guild_id)
 
     async def reload_config(self) -> None:
         """Recarrega `bot.config` a partir do banco. Chamado pela API ao salvar."""
         if self.db is None:
             return
-        guild_id = self.config.guild_id if self.config else GUILD_ID
+        gc = self.global_config
+        guild_id = (gc.get("primary_guild_id") if gc else None) or GUILD_ID
+        if self.config:
+            guild_id = self.config.get("guild_id") or guild_id
         self.config = await refresh_server_config(self.db, guild_id)
 
     # ─── LISTEN/NOTIFY (cache invalidation) ───────────────────────────────────
