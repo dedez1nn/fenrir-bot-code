@@ -206,7 +206,7 @@ class VoiceCreator(commands.Cog):
         return validate_voice_creator(dict(cfg) if cfg else {})
 
     def cog_unload(self):
-        self.cleanup_loop.cancel()
+        pass
 
     async def _cleanup_logic(self):
         for guild in self.bot.guilds:
