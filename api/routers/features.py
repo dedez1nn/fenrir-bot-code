@@ -69,28 +69,45 @@ async def list_features(guild_id: int, _=Depends(require_admin)) -> Dict[str, An
 
 
 @router.get("/{guild_id}/validation", response_model=Dict[str, Any])
-async def validate_features(guild_id: int, _=Depends(require_admin)) -> Dict[str, Any]:
-    """Roda todos os validadores contra a server_config atual e retorna erros por feature."""
+async def validate_features(
+    guild_id: int,
+    live: bool = False,
+    _=Depends(require_admin),
+) -> Dict[str, Any]:
+    """Retorna o estado de validação de todas as features.
+
+    Por padrão lê o último resultado persistido pelo bot (rápido).
+    Com `?live=true` re-executa os validadores em tempo real contra server_config.
+    """
+    if live:
+        async with api_db.acquire() as conn:
+            cfg_row = await conn.fetchrow(
+                "SELECT * FROM server_config WHERE guild_id = $1", guild_id
+            )
+        if cfg_row is None:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                detail="server_config não existe para esta guild",
+            )
+        from db.validators import validate_all
+        all_errors = validate_all(dict(cfg_row))
+        result: Dict[str, Any] = {}
+        for feature, errors in all_errors.items():
+            result[feature] = {"is_valid": len(errors) == 0, "errors": errors, "source": "live"}
+        return {"guild_id": guild_id, "features": result}
+
     async with api_db.acquire() as conn:
-        cfg_row = await conn.fetchrow(
-            "SELECT * FROM server_config WHERE guild_id = $1", guild_id
+        rows = await conn.fetch(
+            "SELECT feature, validation_errors FROM server_feature_config WHERE guild_id = $1",
+            guild_id,
         )
-    if cfg_row is None:
-        raise HTTPException(
-            status.HTTP_404_NOT_FOUND,
-            detail="server_config não existe para esta guild",
-        )
-
-    cfg = dict(cfg_row)
-
-    from db.validators import validate_all
-    all_errors = validate_all(cfg)
-
-    result: Dict[str, Any] = {}
-    for feature, errors in all_errors.items():
-        result[feature] = {
+    result = {}
+    for row in rows:
+        errors = row["validation_errors"] or []
+        result[row["feature"]] = {
             "is_valid": len(errors) == 0,
             "errors": errors,
+            "source": "stored",
         }
     return {"guild_id": guild_id, "features": result}
 

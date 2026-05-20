@@ -194,6 +194,8 @@ class VoiceCreator(commands.Cog):
                 self.feature_enabled = await is_feature_enabled(self.bot.db, guild_id, "voice_creator")
                 feat_cfg = await get_feature_config(self.bot.db, guild_id, "voice_creator")
                 self.channel_name_prefix = feat_cfg.get("channel_name_prefix") or "🔊 Sala de"
+        from db.feature_config import validate_and_save_for_cog
+        await validate_and_save_for_cog(self.bot, "voice_creator", self)
 
     async def reload_feature_state(self) -> None:
         await self.cog_load()

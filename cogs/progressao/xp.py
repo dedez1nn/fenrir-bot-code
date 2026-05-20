@@ -335,15 +335,7 @@ class XPCog(commands.Cog):
         self.dobro_xp_ativos = {}
         self.blacklisted_channel_ids: set = set()
 
-        _default_roles = {
-            2: 1427356351516119180,
-            5: 1427318172033351781,
-            10: 1427318241197293711,
-            20: 1427318396772417701,
-            30: 1427318764814336213,
-            40: 1427319349764423771,
-            50: 1427319515548483757,
-        }
+        _default_roles: dict = {}
         _cfg = getattr(bot, "config", None)
         _role_map = (_cfg.get("levelup_role_map") or {}) if _cfg else {}
         self.cargos_por_nivel = (
@@ -389,6 +381,13 @@ class XPCog(commands.Cog):
                 self.feature_enabled = await is_feature_enabled(self.bot.db, guild_id, "xp")
                 feat_cfg = await get_feature_config(self.bot.db, guild_id, "xp")
                 self.blacklisted_channel_ids = set(feat_cfg.get("blacklisted_channel_ids", []))
+        from db.feature_config import validate_and_save_for_cog
+        await validate_and_save_for_cog(self.bot, "xp", self)
+
+    async def validate_feature_config(self) -> list:
+        from db.validators import validate_xp
+        cfg = getattr(self.bot, "config", None)
+        return validate_xp(cfg.to_dict() if cfg else {})
 
     async def reload_feature_state(self) -> None:
         if self.bot.db is not None:
@@ -399,6 +398,8 @@ class XPCog(commands.Cog):
                 self.feature_enabled = await is_feature_enabled(self.bot.db, guild_id, "xp")
                 feat_cfg = await get_feature_config(self.bot.db, guild_id, "xp")
                 self.blacklisted_channel_ids = set(feat_cfg.get("blacklisted_channel_ids", []))
+        from db.feature_config import validate_and_save_for_cog
+        await validate_and_save_for_cog(self.bot, "xp", self)
 
     def _restaurar_dobro_xp(self):
         agora = time.time()

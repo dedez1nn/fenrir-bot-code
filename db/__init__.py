@@ -22,6 +22,8 @@ from .feature_config import (
     set_feature_config,
     load_feature_state_for_cog,
     load_feature_config_for_cog,
+    save_validation_result,
+    validate_and_save_for_cog,
 )
 from .validators import validate_all, VALIDATORS
 
@@ -45,6 +47,8 @@ __all__ = [
     "set_feature_config",
     "load_feature_state_for_cog",
     "load_feature_config_for_cog",
+    "save_validation_result",
+    "validate_and_save_for_cog",
     "validate_all",
     "VALIDATORS",
 ]

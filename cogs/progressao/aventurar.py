@@ -91,6 +91,8 @@ class AventuraCog(commands.Cog):
 
         if self.use_db:
             log.info("AventuraCog: modo DB ativo")
+        from db.feature_config import validate_and_save_for_cog
+        await validate_and_save_for_cog(self.bot, "adventures", self)
 
     async def reload_feature_state(self) -> None:
         if self.bot.db is not None:
@@ -99,6 +101,8 @@ class AventuraCog(commands.Cog):
             if guild_id:
                 from db.feature_config import is_feature_enabled
                 self.feature_enabled = await is_feature_enabled(self.bot.db, guild_id, "adventures")
+        from db.feature_config import validate_and_save_for_cog
+        await validate_and_save_for_cog(self.bot, "adventures", self)
 
     async def validate_feature_config(self) -> list:
         from db.validators import validate_adventures

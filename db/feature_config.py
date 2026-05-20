@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 log = logging.getLogger(__name__)
 
@@ -103,6 +103,51 @@ async def load_feature_config_for_cog(bot, feature: str) -> dict:
     if not guild_id:
         return {}
     return await get_feature_config(bot.db, guild_id, feature)
+
+
+async def save_validation_result(pool, guild_id: int, feature: str, errors: List[Dict]) -> None:
+    """Persiste resultado de validação na tabela server_feature_config (best-effort)."""
+    if pool is None:
+        return
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO server_feature_config (guild_id, feature, validation_errors, updated_at)
+                VALUES ($1, $2, $3::jsonb, NOW())
+                ON CONFLICT (guild_id, feature) DO UPDATE
+                    SET validation_errors = EXCLUDED.validation_errors, updated_at = NOW()
+                """,
+                guild_id,
+                feature,
+                json.dumps(errors),
+            )
+    except Exception as exc:
+        log.warning("Falha ao salvar validação de %s/%s: %s", guild_id, feature, exc)
+
+
+async def validate_and_save_for_cog(bot, feature: str, cog) -> List[Dict]:
+    """Roda validate_feature_config() na cog e persiste o resultado no DB.
+
+    Retorna a lista de erros (vazia = config válida). Nunca lança exceção.
+    """
+    errors: List[Dict] = []
+    if hasattr(cog, "validate_feature_config"):
+        try:
+            errors = await cog.validate_feature_config()
+        except Exception as exc:
+            log.warning("validate_feature_config falhou para %s: %s", feature, exc)
+
+    if bot.db is not None:
+        cfg = getattr(bot, "config", None)
+        guild_id = (cfg.get("guild_id") if cfg else None)
+        if guild_id:
+            await save_validation_result(bot.db, guild_id, feature, errors)
+
+    if errors:
+        log.warning("Feature '%s' com %d erro(s) de config: %s", feature, len(errors),
+                    [e.get("code") for e in errors])
+    return errors
 
 
 async def set_feature_config(pool, guild_id: int, feature: str, config: dict) -> None:

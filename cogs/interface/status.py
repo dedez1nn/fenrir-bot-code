@@ -4,7 +4,7 @@ from discord import app_commands
 from datetime import datetime
 
 
-_DEFAULT_STATUS_CHANGELOG_CH = 1427311999381147708
+_DEFAULT_STATUS_CHANGELOG_CH = None
 
 
 class StatusCog(commands.Cog):

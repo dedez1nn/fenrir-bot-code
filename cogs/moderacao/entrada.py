@@ -3,9 +3,9 @@ from discord.ext import commands
 import json
 import os
 
-_DEFAULT_JOIN_LOG_CH  = 1426206240467320983
-_DEFAULT_HELP_CH      = 1426274988046155787
-_DEFAULT_LEAVE_LOG_CH = 1427472688665854133
+_DEFAULT_JOIN_LOG_CH  = None
+_DEFAULT_HELP_CH      = None
+_DEFAULT_LEAVE_LOG_CH = None
 
 
 class MemberLogs(commands.Cog):
@@ -23,6 +23,8 @@ class MemberLogs(commands.Cog):
                 self.feature_enabled = await is_feature_enabled(self.bot.db, guild_id, "member_logs")
                 feat_cfg = await get_feature_config(self.bot.db, guild_id, "member_logs")
                 self.welcome_image_url = feat_cfg.get("welcome_image_url") or None
+        from db.feature_config import validate_and_save_for_cog
+        await validate_and_save_for_cog(self.bot, "member_logs", self)
 
     async def reload_feature_state(self) -> None:
         await self.cog_load()

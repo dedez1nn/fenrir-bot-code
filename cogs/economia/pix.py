@@ -78,6 +78,8 @@ class PixCog(commands.Cog):
                     log.info("PixCog: catálogo premium carregado do DB (%d planos).", len(plans))
             except Exception as exc:
                 log.warning("PixCog: falha ao carregar premium_catalog, usando defaults: %s", exc)
+        from db.feature_config import validate_and_save_for_cog
+        await validate_and_save_for_cog(self.bot, "premium", self)
 
     async def reload_feature_state(self) -> None:
         if self.bot.db is not None:
@@ -86,6 +88,8 @@ class PixCog(commands.Cog):
             if guild_id:
                 from db.feature_config import is_feature_enabled
                 self.feature_enabled = await is_feature_enabled(self.bot.db, guild_id, "premium")
+        from db.feature_config import validate_and_save_for_cog
+        await validate_and_save_for_cog(self.bot, "premium", self)
 
     async def validate_feature_config(self) -> list:
         from db.validators import validate_premium

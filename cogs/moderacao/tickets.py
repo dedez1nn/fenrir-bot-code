@@ -49,7 +49,7 @@ class TicketView(discord.ui.View):
 
             nome_canal = f"{tipo}-{usuario.name}"
 
-            staff_ids = (cfg.get("ticket_staff_role_ids") or []) if cfg else [1426202850769244301, 1426203167049121894]
+            staff_ids = (cfg.get("ticket_staff_role_ids") or []) if cfg else []
             staff_roles = [r for r in (servidor.get_role(rid) for rid in staff_ids) if r]
             
             overwrites = {
@@ -113,6 +113,10 @@ class TicketCog(commands.Cog):
         self.bot = bot
         self.feature_enabled: bool = True
 
+    async def _persist_validation(self) -> None:
+        from db.feature_config import validate_and_save_for_cog
+        await validate_and_save_for_cog(self.bot, "tickets", self)
+
     async def cog_load(self) -> None:
         if self.bot.db is not None:
             cfg = getattr(self.bot, "config", None)
@@ -120,6 +124,7 @@ class TicketCog(commands.Cog):
             if guild_id:
                 from db.feature_config import is_feature_enabled
                 self.feature_enabled = await is_feature_enabled(self.bot.db, guild_id, "tickets")
+        await self._persist_validation()
 
     async def reload_feature_state(self) -> None:
         await self.cog_load()
@@ -265,7 +270,7 @@ class TicketCog(commands.Cog):
         nome_arquivo = f"transcript_{canal_ticket.name}.txt"
         try:
             _cfg = getattr(self.bot, "config", None)
-            canal_logs_id = (_cfg.get("ticket_log_channel_id") if _cfg else None) or 1426323866963410985
+            canal_logs_id = (_cfg.get("ticket_log_channel_id") if _cfg else None)
             canal_logs = canal_ticket.guild.get_channel(canal_logs_id)
             
             if not canal_logs:
@@ -311,7 +316,7 @@ class FecharTicketButton(discord.ui.Button):
             canal = interaction.channel
 
             cfg = getattr(interaction.client, "config", None)
-            staff_ids = set((cfg.get("ticket_staff_role_ids") or []) if cfg else [1426202850769244301, 1426203167049121894])
+            staff_ids = set((cfg.get("ticket_staff_role_ids") or []) if cfg else [])
 
             tem_permissao = False
 

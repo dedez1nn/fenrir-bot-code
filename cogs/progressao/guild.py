@@ -98,12 +98,19 @@ class GuildSystem(commands.Cog):
             except Exception as exc:
                 log.error("GuildSystem: erro ao carregar guilds do DB: %s", exc)
                 self.bot._guilds_cache = {"raids_ativas": {}}
-        from db.feature_config import load_feature_state_for_cog
+        from db.feature_config import load_feature_state_for_cog, validate_and_save_for_cog
         self.feature_enabled = await load_feature_state_for_cog(self.bot, "guilds")
+        await validate_and_save_for_cog(self.bot, "guilds", self)
+
+    async def validate_feature_config(self) -> list:
+        from db.validators import validate_guilds
+        cfg = getattr(self.bot, "config", None)
+        return validate_guilds(cfg.to_dict() if cfg else {})
 
     async def reload_feature_state(self) -> None:
-        from db.feature_config import load_feature_state_for_cog
+        from db.feature_config import load_feature_state_for_cog, validate_and_save_for_cog
         self.feature_enabled = await load_feature_state_for_cog(self.bot, "guilds")
+        await validate_and_save_for_cog(self.bot, "guilds", self)
 
     def calcular_xp_necessario(self, nivel: int) -> int:
         return int(self.xp_base * (2 ** (nivel - 1)))

@@ -15,6 +15,13 @@ class InviteBlocker(commands.Cog):
             if guild_id:
                 from db.feature_config import is_feature_enabled
                 self.feature_enabled = await is_feature_enabled(self.bot.db, guild_id, "invite_blocker")
+        from db.feature_config import validate_and_save_for_cog
+        await validate_and_save_for_cog(self.bot, "invite_blocker", self)
+
+    async def validate_feature_config(self) -> list:
+        from db.validators import validate_invite_blocker
+        cfg = getattr(self.bot, "config", None)
+        return validate_invite_blocker(cfg.to_dict() if cfg else {})
 
     async def reload_feature_state(self) -> None:
         await self.cog_load()

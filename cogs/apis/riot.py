@@ -44,12 +44,19 @@ class RiotCog(commands.Cog):
         self.champion_key_data: dict[int, str] = {}
 
     async def cog_load(self) -> None:
-        from db.feature_config import load_feature_state_for_cog
+        from db.feature_config import load_feature_state_for_cog, validate_and_save_for_cog
         self.feature_enabled = await load_feature_state_for_cog(self.bot, "riot")
+        await validate_and_save_for_cog(self.bot, "riot", self)
+
+    async def validate_feature_config(self) -> list:
+        from db.validators import validate_riot
+        cfg = getattr(self.bot, "config", None)
+        return validate_riot(cfg.to_dict() if cfg else {})
 
     async def reload_feature_state(self) -> None:
-        from db.feature_config import load_feature_state_for_cog
+        from db.feature_config import load_feature_state_for_cog, validate_and_save_for_cog
         self.feature_enabled = await load_feature_state_for_cog(self.bot, "riot")
+        await validate_and_save_for_cog(self.bot, "riot", self)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if not self.feature_enabled:

@@ -230,12 +230,19 @@ class FenrirCoins(commands.Cog):
             self.daily_coins        = self.bot.config.get("daily_coins")               or self.daily_coins
             self.streak_bonus       = self.bot.config.get("daily_streak_bonus")        or self.streak_bonus
 
-        from db.feature_config import load_feature_state_for_cog
+        from db.feature_config import load_feature_state_for_cog, validate_and_save_for_cog
         self.feature_enabled = await load_feature_state_for_cog(self.bot, "economy")
+        await validate_and_save_for_cog(self.bot, "economy", self)
+
+    async def validate_feature_config(self) -> list:
+        from db.validators import validate_economy
+        cfg = getattr(self.bot, "config", None)
+        return validate_economy(cfg.to_dict() if cfg else {})
 
     async def reload_feature_state(self) -> None:
-        from db.feature_config import load_feature_state_for_cog
+        from db.feature_config import load_feature_state_for_cog, validate_and_save_for_cog
         self.feature_enabled = await load_feature_state_for_cog(self.bot, "economy")
+        await validate_and_save_for_cog(self.bot, "economy", self)
 
     def carregar_dados(self):
         if os.path.exists(self.ARQUIVO_DADOS):

@@ -1,19 +1,8 @@
 import discord
 from discord.ext import commands
 
-_DEFAULT_FREE_COLOR_ROLE_IDS = [
-    1428066709356548217,
-    1428066760141045771,
-    1428066489419825325,
-    1428066484889849896,
-    1428066757322473588,
-]
-_DEFAULT_PREMIUM_COLOR_ROLE_IDS = [
-    1428400034952515696,
-    1428400132272951358,
-    1428399718945390764,
-    1428399137057013783,
-]
+_DEFAULT_FREE_COLOR_ROLE_IDS: list[int] = []
+_DEFAULT_PREMIUM_COLOR_ROLE_IDS: list[int] = []
 
 
 def _free_color_ids(client) -> list[int]:
@@ -66,6 +55,15 @@ class CoresView(discord.ui.View):
 class EnviarCores(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+
+    async def cog_load(self) -> None:
+        from db.feature_config import validate_and_save_for_cog
+        await validate_and_save_for_cog(self.bot, "colors", self)
+
+    async def validate_feature_config(self) -> list:
+        from db.validators import validate_colors
+        cfg = getattr(self.bot, "config", None)
+        return validate_colors(cfg.to_dict() if cfg else {})
 
     async def cores(self, channel):
         embed = discord.Embed(
