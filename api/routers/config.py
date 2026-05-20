@@ -10,13 +10,15 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from .. import db as api_db
+from .auth import require_admin
 
 router = APIRouter(prefix="/config", tags=["config"])
 
 _ALLOWED_PATCH_FIELDS = {
+    # Canais originais
     "commands_channel_id",
     "status_channel_id",
     "afk_voice_channel_id",
@@ -28,6 +30,7 @@ _ALLOWED_PATCH_FIELDS = {
     "coins_log_channel_id",
     "xp_log_channel_id",
     "levelup_channel_id",
+    # Parâmetros de economia
     "admin_ping_ids",
     "levelup_role_map",
     "premium_prices",
@@ -41,6 +44,32 @@ _ALLOWED_PATCH_FIELDS = {
     "xp_por_voz",
     "voice_xp_interval_s",
     "bonus_coins_por_nivel",
+    # Fase 0: cooldowns e XP de vitória
+    "xp_por_vitoria",
+    "coins_por_vitoria",
+    "xp_message_cooldown_s",
+    "coins_message_cooldown_s",
+    # Fase 2: canais de moderação e categorias
+    "member_join_log_channel_id",
+    "help_channel_id",
+    "member_leave_log_channel_id",
+    "ticket_support_category_id",
+    "ticket_donation_category_id",
+    "ticket_staff_role_ids",
+    "ticket_log_channel_id",
+    "voice_creator_channel_id",
+    "status_changelog_channel_id",
+    "adventure_log_channel_id",
+    "guild_raid_channel_id",
+    "free_color_role_ids",
+    "premium_color_role_ids",
+    "special_access_role_ids",
+    # Fase 3: regras operacionais
+    "guild_xp_base",
+    "guild_level_rewards",
+    "guild_raid_cooldown_s",
+    "adventure_chances",
+    "adventure_rewards",
 }
 
 
@@ -56,7 +85,7 @@ async def get_config(guild_id: int) -> Dict[str, Any]:
 
 
 @router.patch("/{guild_id}")
-async def patch_config(guild_id: int, body: Dict[str, Any]) -> Dict[str, Any]:
+async def patch_config(guild_id: int, body: Dict[str, Any], _=Depends(require_admin)) -> Dict[str, Any]:
     """Atualiza campos específicos de server_config.
 
     Somente campos listados em `_ALLOWED_PATCH_FIELDS` são aceitos.

@@ -6,9 +6,23 @@ class InviteBlocker(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.invite_pattern = re.compile(r"(discord\.gg/|discord\.com/invite/)(\w+)")
+        self.feature_enabled: bool = True
+
+    async def cog_load(self) -> None:
+        if self.bot.db is not None:
+            cfg = getattr(self.bot, "config", None)
+            guild_id = (cfg.get("guild_id") if cfg else None)
+            if guild_id:
+                from db.feature_config import is_feature_enabled
+                self.feature_enabled = await is_feature_enabled(self.bot.db, guild_id, "invite_blocker")
+
+    async def reload_feature_state(self) -> None:
+        await self.cog_load()
 
     @commands.Cog.listener()
     async def on_message(self, message):
+        if not self.feature_enabled:
+            return
         if message.author.bot:
             return
         

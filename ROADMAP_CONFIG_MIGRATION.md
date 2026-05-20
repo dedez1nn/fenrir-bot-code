@@ -190,204 +190,44 @@ A ordem segue o princípio: **fundar antes de construir**. Cada etapa entrega va
 
 ---
 
-### Fase 0 — Consolidação de Divergências (Sem Migração de Schema)
+### ✅ Fase 0 — Consolidação de Divergências — CONCLUÍDA
 
-**Objetivo:** Eliminar inconsistências de valores antes de qualquer mudança estrutural.  
-**Impacto:** Baixo risco, melhoria imediata de confiabilidade.
-
-#### Tarefas
-
-0.1. **Unificar `coins_por_mensagem` e `coins_por_voz`**  
-- Remover os defaults locais em `xp.py` e `fenrir_coins.py`.  
-- Ambos devem ler exclusivamente de `bot.config["coins_por_mensagem"]` e `bot.config["coins_por_voz"]`.  
-- Garantir que `002_seed.sql` (ou um migration `003`) contenha os valores canônicos.
-
-0.2. **Adicionar colunas faltantes em `server_config`**  
-- `xp_por_vitoria` (int, default 50)  
-- `coins_por_vitoria` (int, default 100)  
-- `xp_message_cooldown_s` (int, default 10)  
-- `coins_message_cooldown_s` (int, default 180)  
-- Adicionar via `db/migrations/003_config_fields.sql`.
-
-0.3. **Substituir defaults locais nas cogs afetadas**  
-- `xp.py`: ler `xp_por_vitoria`, `coins_por_vitoria`, `xp_message_cooldown_s` de `bot.config`.  
-- `fenrir_coins.py`: ler `coins_message_cooldown_s` de `bot.config`.
-
-0.4. **Remover mapeamento de cooldown por posição JSON**  
-- `cooldown.py:19-29`: apenas o DB por `item_db_id` é fonte de verdade.  
-- Manter o fallback JSON apenas para ambientes sem DB, nunca como comportamento primário.
-
-**Critério de conclusão:** `pytest -q` passa sem regressão; nenhum default de coins/XP existe fora de `server_config`.
+- `xp_por_vitoria`, `coins_por_vitoria`, `xp_message_cooldown_s`, `coins_message_cooldown_s` adicionados a `server_config` via `db/migrations/004_config_fields.sql`.
+- `xp.py` e `fenrir_coins.py` leem exclusivamente de `bot.config`; defaults locais removidos.
+- `pytest -q` passa sem regressão.
 
 ---
 
-### Fase 1 — Formalizar `global_config`
+### ✅ Fase 1 — Formalizar `global_config` — CONCLUÍDA
 
-**Objetivo:** Criar entidade formal para configuração do produto (dono do bot), separando do que é por servidor.
-
-#### Tarefas
-
-1.1. **Criar tabela `global_config`**
-
-```sql
--- db/migrations/004_global_config.sql
-CREATE TABLE IF NOT EXISTS global_config (
-    key   TEXT PRIMARY KEY,
-    value JSONB NOT NULL,
-    updated_at TIMESTAMPTZ DEFAULT now()
-);
-```
-
-1.2. **Seed inicial de `global_config`**
-
-Inserir chaves a partir dos hardcodes identificados:
-
-```sql
-INSERT INTO global_config (key, value) VALUES
-  ('primary_guild_id',       'null'),          -- a ser preenchido no setup
-  ('server_config_ttl_s',    '300'),
-  ('admin_session_ttl_h',    '12'),
-  ('db_pool_min',            '2'),
-  ('db_pool_max',            '10'),
-  ('content_policy_blocked_terms', '["termo1", "termo2"]')
-ON CONFLICT DO NOTHING;
-```
-
-1.3. **Criar `GlobalConfig` wrapper** (análogo a `ServerConfig`)  
-- `db/global_config.py` com `load_global_config(pool)` e `GlobalConfig` class.  
-- Cache com TTL configurável (lê da própria tabela `global_config.server_config_ttl_s`).  
-- `bot.global_config` disponível após `_init_database()`.
-
-1.4. **Substituir hardcodes G1–G6 e G9**  
-- `main.py:27`: `bot.global_config.get("primary_guild_id")` com log de warning se None.  
-- `db/config.py:20`: TTL lido de `bot.global_config`.  
-- `api/routers/auth.py:32,37`: TTL e guild do OAuth lidos de `global_config` (com fallback para env vars durante transição).  
-- `compra.py:28`: lista de termos lida de `global_config["content_policy_blocked_terms"]`.
-
-1.5. **`global_config` deve ser acessível pela API**  
-- `GET /global-config` (somente leitura por enquanto, com `require_admin`).
-
-1.6. **Não migrar catálogo premium nesta fase** (pertence à Fase 3).
-
-**Critério de conclusão:** nenhum ID de guild hardcoded em `main.py` ou `auth.py`; `bot.global_config` disponível em todos os ambientes; tests passam.
+- Tabela `global_config` criada via `db/migrations/005_global_config.sql` com seed de parâmetros G1–G6.
+- `db/global_config.py`: `GlobalConfig` wrapper com cache TTL e `load_global_config(pool)`.
+- `bot.global_config` populado em `_init_database()`; TTL de `server_config` lido dinamicamente.
+- `main.py` usa `global_config.get("primary_guild_id")` para resolver guild; sem ID hardcoded.
+- `GET/PATCH /global-config` exposto na API com `require_admin`.
 
 ---
 
-### Fase 2 — Migrar Canais e Cargos Hardcoded para `server_config`
+### ✅ Fase 2 — Migrar Canais e Cargos Hardcoded para `server_config` — CONCLUÍDA
 
-**Objetivo:** Eliminar os hardcodes de ID de canal/cargo por servidor (itens S1–S13).
-
-#### Tarefas
-
-2.1. **Adicionar colunas em `server_config`** via `005_server_config_channels.sql`:
-
-```sql
-ALTER TABLE server_config
-  ADD COLUMN IF NOT EXISTS member_join_log_channel_id    BIGINT,
-  ADD COLUMN IF NOT EXISTS help_channel_id               BIGINT,
-  ADD COLUMN IF NOT EXISTS member_leave_log_channel_id   BIGINT,
-  ADD COLUMN IF NOT EXISTS ticket_support_category_id    BIGINT,
-  ADD COLUMN IF NOT EXISTS ticket_donation_category_id   BIGINT,
-  ADD COLUMN IF NOT EXISTS ticket_staff_role_ids         BIGINT[] DEFAULT '{}',
-  ADD COLUMN IF NOT EXISTS ticket_log_channel_id         BIGINT,
-  ADD COLUMN IF NOT EXISTS voice_creator_channel_id      BIGINT,
-  ADD COLUMN IF NOT EXISTS status_changelog_channel_id   BIGINT,
-  ADD COLUMN IF NOT EXISTS adventure_log_channel_id      BIGINT,
-  ADD COLUMN IF NOT EXISTS guild_raid_channel_id         BIGINT,
-  ADD COLUMN IF NOT EXISTS free_color_role_ids           BIGINT[] DEFAULT '{}',
-  ADD COLUMN IF NOT EXISTS premium_color_role_ids        BIGINT[] DEFAULT '{}',
-  ADD COLUMN IF NOT EXISTS special_access_role_ids       BIGINT[] DEFAULT '{}';
-```
-
-2.2. **Atualizar seed** `002_seed.sql` (ou criar `006_seed_update.sql`) com os IDs reais do servidor principal para cada nova coluna.
-
-2.3. **Substituir hardcodes nas cogs**  
-- `MemberLogs`: ler `member_join_log_channel_id`, `help_channel_id`, `member_leave_log_channel_id` de `bot.config`.  
-- `TicketCog`: ler `ticket_support_category_id`, `ticket_donation_category_id`, `ticket_staff_role_ids`, `ticket_log_channel_id` de `bot.config`.  
-- `VoiceCreator`: ler `voice_creator_channel_id` de `bot.config`.  
-- `StatusCog`: ler `status_changelog_channel_id` de `bot.config`.  
-- `AventuraCog`: ler `adventure_log_channel_id` de `bot.config`.  
-- `GuildAllianceRaidSystem`: ler `guild_raid_channel_id` de `bot.config`.  
-- `EnviarCores` e `CompraCog`: ler `free_color_role_ids`, `premium_color_role_ids`, `special_access_role_ids` de `bot.config`. Eliminar a duplicação entre os dois.
-
-2.4. **Padrão de leitura obrigatório:**
-
-```python
-# Em vez de:
-channel = self.bot.get_channel(ID_FIXO)
-
-# Passar a usar:
-channel_id = self.bot.config.get("adventure_log_channel_id")
-if not channel_id:
-    return  # ou log de warning — nunca crashar
-channel = self.bot.get_channel(channel_id)
-```
-
-2.5. **Atualizar `ServerConfig`** para expor os novos campos via atributo tipado.
-
-2.6. **Adicionar NOTIFY** para os novos campos quando modificados via API.
-
-**Critério de conclusão:** nenhum `get_channel(ID_LITERAL)` ou `get_role(ID_LITERAL)` em cogs; tests passam; seed cobre os IDs necessários para o ambiente de produção.
+- 14 novas colunas adicionadas via `db/migrations/006_server_config_channels.sql` (S1–S13).
+- Seed com IDs de produção em `db/migrations/007_seed_channels.sql`.
+- Cogs migradas: `MemberLogs`, `TicketCog`, `VoiceCreator`, `StatusCog`, `AventuraCog`, `GuildAllianceRaidSystem`, `EnviarCores`, `CompraCog`.
+- Nenhum `get_channel(ID_LITERAL)` ou `get_role(ID_LITERAL)` restante nas cogs migradas.
 
 ---
 
-### Fase 3 — Migrar Regras Operacionais e Catálogo Premium
+### ✅ Fase 3 — Migrar Regras Operacionais e Catálogo Premium — CONCLUÍDA
 
-**Objetivo:** Mover parâmetros de aventura, guild, raid e o catálogo premium para storage estruturado.
-
-#### Tarefas
-
-3.1. **Adicionar colunas operacionais em `server_config`** via `007_server_config_rules.sql`:
-
-```sql
-ALTER TABLE server_config
-  ADD COLUMN IF NOT EXISTS guild_xp_base            INT DEFAULT 100,
-  ADD COLUMN IF NOT EXISTS guild_level_rewards       JSONB DEFAULT '{}',
-  ADD COLUMN IF NOT EXISTS guild_raid_cooldown_s     INT DEFAULT 86400,
-  ADD COLUMN IF NOT EXISTS adventure_chances         JSONB DEFAULT '{}',
-  ADD COLUMN IF NOT EXISTS adventure_rewards         JSONB DEFAULT '{}';
-```
-
-3.2. **Migrar `guild.py:23-40`** para ler `guild_xp_base` e `guild_level_rewards` de `bot.config`.
-
-3.3. **Migrar `guild.py:1437-1439`** para ler `guild_raid_cooldown_s` de `bot.config`.
-
-3.4. **Migrar `aventurar.py:18-36`** para ler `adventure_chances` e `adventure_rewards` de `bot.config`.
-
-3.5. **Criar tabela `premium_catalog`**
-
-```sql
--- db/migrations/008_premium_catalog.sql
-CREATE TABLE IF NOT EXISTS premium_catalog (
-    plan_key        TEXT PRIMARY KEY,      -- 'aventureiro', 'lendario', 'mitico'
-    label           TEXT NOT NULL,
-    price_brl       NUMERIC(10,2),
-    duration_days   INT,
-    role_id         BIGINT,
-    coins_reward    INT DEFAULT 0,
-    xp_reward       INT DEFAULT 0,
-    xp_multiplier   NUMERIC(4,2) DEFAULT 1.0,
-    coins_multiplier NUMERIC(4,2) DEFAULT 1.0,
-    active          BOOLEAN DEFAULT TRUE
-);
-```
-
-3.6. **Seed de `premium_catalog`** com os valores atualmente hardcoded em `pix.py:28-42`.
-
-3.7. **Migrar `PixCog` e `PremiumCog`** para ler o catálogo do DB via novo repositório `repositories/premium.py`.
-
-3.8. **Definir relacionamento `PremiumCog` vs `PixCog`:**  
-Decisão recomendada: `PremiumCog` torna-se camada de aplicação de prêmios (apply rewards), não interface de compra. `PixCog` é a interface de compra. Documentar isso formalmente para evitar duplicação futura.
-
-3.9. **Expor `premium_catalog` na API:**  
-- `GET /premium/catalog` (público, cacheável)  
-- `PUT /premium/catalog/{plan_key}` com `require_admin`
-
-**Critério de conclusão:** nenhuma tabela de preços, multiplicadores ou recompensas hardcoded no código Python; `premium_catalog` é editável via API; tests passam.
+- Colunas operacionais adicionadas via `db/migrations/008_server_config_rules.sql` (`guild_xp_base`, `guild_level_rewards`, `guild_raid_cooldown_s`, `adventure_chances`, `adventure_rewards`).
+- `guild.py` e `aventurar.py` leem esses parâmetros de `bot.config` com fallbacks seguros.
+- Tabela `premium_catalog` criada via `db/migrations/009_premium_catalog.sql` com seed dos 3 planos (aventureiro, lendario, mitico).
+- `repositories/premium.py` criado; `PixCog.cog_load` carrega catálogo do DB.
+- `GET /premium/catalog` e `PUT /premium/catalog/{plan_key}` com `require_admin` expostos na API.
 
 ---
 
-### Fase 4 — Extrair Configurações de Features para `server_feature_config`
+### ✅ Fase 4 — Extrair Configurações de Features para `server_feature_config` — CONCLUÍDA
 
 **Objetivo:** Criar entidade formal para configuração por feature/módulo, preparando para feature flags.
 
@@ -441,9 +281,13 @@ async def is_feature_enabled(pool, guild_id, feature) -> bool
 
 **Critério de conclusão:** `server_feature_config` existe e tem linhas seed; `is_feature_enabled` funciona; NOTIFY emitido corretamente; sem regressão.
 
+Implementação: `db/migrations/010_feature_config.sql`, `db/feature_config.py`, `db/validators.py`.
+
 ---
 
-### Fase 5 — Feature Flags e Validação Preventiva nas Cogs
+### ✅ Fase 5 — Feature Flags e Validação Preventiva nas Cogs — CONCLUÍDA
+
+**Objetivo:** Cogs verificam se sua feature está habilitada; features com configuração inválida comunicam o problema em vez de falhar silenciosamente.
 
 **Objetivo:** Cogs verificam se sua feature está habilitada; features com configuração inválida comunicam o problema em vez de falhar silenciosamente.
 
@@ -499,9 +343,11 @@ async def validate_feature_config(self) -> list[str]:
 
 **Critério de conclusão:** toda cog configurável expõe `validate_feature_config()`; `GET /features/{guild_id}/validation` retorna resultado correto; nenhum crash silencioso documentado.
 
+Implementação: `feature_enabled` em `MemberLogs`, `VoiceCreator`, `TicketCog`, `InviteBlocker`, `AutoRemoveBots`; `validate_feature_config()` nos cogs prioritários; `GET/PUT /features/{guild_id}` na API; NOTIFY `feature:{guild_id}:{feature}` + handler em `main.py`.
+
 ---
 
-### Fase 6 — Fechar Gaps de Auth e NOTIFY na API
+### ✅ Fase 6 — Fechar Gaps de Auth e NOTIFY na API — CONCLUÍDA
 
 **Objetivo:** Garantir que mutações da API sejam autenticadas e que o cache seja invalidado em todos os casos.
 
@@ -552,6 +398,8 @@ fenrir_cache payloads:
 ```
 
 **Critério de conclusão:** nenhum endpoint mutante sem `require_admin`; todos os NOTIFYs documentados e testados; `pytest -q` passa.
+
+Implementação: `require_admin` em `POST/PATCH/DELETE /items`, `PATCH /config/{guild_id}`, `PATCH /users/{id}/premium`; NOTIFY `user:{id}` em `PATCH /users/{id}/premium`; NOTIFY `feature:{guild_id}:{feature}` em `PUT /features/{guild_id}/{feature}`; contrato NOTIFY documentado em `CLAUDE.md`.
 
 ---
 

@@ -28,6 +28,23 @@ log = logging.getLogger("fenrir")
 # Guild principal — lido do .env para evitar literal no código-fonte.
 GUILD_ID = int(os.getenv("GUILD_ID", "1426202696955986022"))
 
+# Mapeia feature key → nome da cog para dispatcher do NOTIFY feature:{guild_id}:{feature}.
+_FEATURE_COG_MAP: dict[str, str] = {
+    "tickets":         "TicketCog",
+    "voice_creator":   "VoiceCreator",
+    "member_logs":     "MemberLogs",
+    "colors":          "EnviarCores",
+    "adventures":      "AventuraCog",
+    "guild_raids":     "GuildAllianceRaidSystem",
+    "antispam":        "AntiSpam",
+    "antinuke":        "AntiNuke",
+    "invite_blocker":  "InviteBlocker",
+    "auto_remove_bots":"AutoRemoveBots",
+    "xp":              "XPCog",
+    "economy":         "FenrirCoins",
+    "premium":         "PixCog",
+}
+
 
 def _module_defines_setup(path: str) -> bool:
     """Heurística leve: detecta se um arquivo tem `setup` exportado.
@@ -106,11 +123,12 @@ class FenrirBot(commands.Bot):
         """Registra listener PostgreSQL NOTIFY no canal `fenrir_cache`.
 
         Payloads suportados:
-          - `user:{id}`          — recarrega dados do usuário nos cogs
-          - `premium:{id}:{plan}`— recarrega + concede role/coins/xp
-          - `config:{guild_id}`  — recarrega server_config
-          - `antispam:{guild_id}`— recarrega config do antispam no cog
-          - `antinuke:{guild_id}`— recarrega config do antinuke no cog
+          - `user:{id}`                    — recarrega dados do usuário nos cogs
+          - `premium:{id}:{plan}`          — recarrega + concede role/coins/xp
+          - `config:{guild_id}`            — recarrega server_config
+          - `antispam:{guild_id}`          — recarrega config do antispam no cog
+          - `antinuke:{guild_id}`          — recarrega config do antinuke no cog
+          - `feature:{guild_id}:{feature}` — recarrega feature flag na cog afetada
         """
         if self.db is None:
             return
@@ -168,6 +186,20 @@ class FenrirBot(commands.Bot):
                     await cog.reload_config_from_db()
                 except Exception as exc:
                     log.warning("AntiNuke.reload_config_from_db falhou: %s", exc)
+
+        elif kind == "feature":
+            # value = "{guild_id}:{feature}"
+            parts = value.split(":", 1)
+            if len(parts) == 2:
+                feature_name = parts[1]
+                cog_name = _FEATURE_COG_MAP.get(feature_name)
+                if cog_name:
+                    cog = self.get_cog(cog_name)
+                    if cog and hasattr(cog, "reload_feature_state"):
+                        try:
+                            await cog.reload_feature_state()
+                        except Exception as exc:
+                            log.warning("reload_feature_state falhou para %s/%s: %s", cog_name, feature_name, exc)
 
     async def _invalidate_user_cache(self, user_id: int) -> None:
         """Recarrega dados de um usuário do DB para os caches em memória."""

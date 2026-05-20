@@ -9,10 +9,15 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query, status
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, field_validator
 
 from .. import db as api_db
+from .auth import require_admin
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -59,7 +64,7 @@ async def get_user(user_id: int) -> Dict[str, Any]:
 
 
 @router.patch("/{user_id}/premium")
-async def update_premium(user_id: int, body: PremiumUpdate) -> Dict[str, Any]:
+async def update_premium(user_id: int, body: PremiumUpdate, _=Depends(require_admin)) -> Dict[str, Any]:
     """Atualiza o plano premium de um usuário. Envie `premium: null` para remover."""
     async with api_db.acquire() as conn:
         row = await conn.fetchrow(
@@ -75,4 +80,14 @@ async def update_premium(user_id: int, body: PremiumUpdate) -> Dict[str, Any]:
         )
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Usuário não encontrado")
+
+    try:
+        async with api_db.acquire() as notify_conn:
+            await notify_conn.execute(
+                "SELECT pg_notify('fenrir_cache', $1)",
+                f"user:{user_id}",
+            )
+    except Exception as exc:
+        log.warning("Falha ao enviar NOTIFY user: %s", exc)
+
     return dict(row)

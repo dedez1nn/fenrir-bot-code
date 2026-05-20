@@ -33,7 +33,7 @@ pip install -r api/requirements.txt    # api (separate process)
 pytest
 ```
 
-The existing test suite has many pre-existing failures unrelated to the database migration (`pytest-asyncio` config + `discord.py` mock incompatibilities). When changing code, ensure your edits don't *add* failures, but don't expect a green run.
+Current verified state: `pytest -q` passes with `162 passed` and warnings. The main warnings are `datetime.utcnow()` deprecations and some `RuntimeWarning` noise around mocked `tasks.loop` usage in tests.
 
 ## Environment Setup
 
@@ -47,7 +47,7 @@ Copy `.env.example` to `.env` and fill in:
 - `ADMIN_ROLE_IDS` — comma-separated Discord role IDs allowed to access the panel. Empty = any guild member.
 - `MP_WEBHOOK_SECRET` — Mercado Pago webhook signing secret for HMAC validation.
 
-The bot **does not crash if Postgres is unavailable** — it logs a warning and operates in legacy-JSON mode. `user_data.json`, `loja_data.json`, and `cooldowns_data.json` are now fallback-only (Phases 3–4 done). `guilds_data.json` and `aventuras_data.json` remain primary until Phase 6.
+The bot **does not crash if Postgres is unavailable** — it logs a warning and operates in legacy-JSON mode. JSON files remain fallback for the migrated systems as well, including guilds and adventures.
 
 ## Architecture
 
@@ -55,14 +55,22 @@ The bot **does not crash if Postgres is unavailable** — it logs a warning and 
 1. Calls `_init_database()` — initializes `bot.db` (asyncpg pool), applies migrations from `db/migrations/*.sql`, imports legacy JSONs into the DB if the target tables are empty, and loads `bot.config` (a `ServerConfig` cached for 5 min).
 2. Walks `cogs/` and loads extensions. **The walker has special handling for cog-packages**: if a directory has `__init__.py` defining `setup()` (e.g. `cogs/antispam`, `cogs/antinuke`), it's loaded once as a package and submodules are *not* loaded as separate cogs. Directories with empty `__init__.py` (e.g. `cogs/economia/`) keep the old behavior — each `.py` is its own cog.
 3. Syncs slash commands with `tree.sync()`.
-4. Calls `_start_cache_listener()` — registers `pool.add_listener("fenrir_cache", …)` to receive PostgreSQL NOTIFY events from the API. Payloads handled: `user:{id}` (reload user cache in FenrirCoins/XPCog), `premium:{id}:{plano}` (reload cache + call `PixCog.grant_premium_rewards`), `config:{guild_id}` (reload `server_config`), `antispam:{guild_id}` (call `AntiSpam.reload_config_from_db`), `antinuke:{guild_id}` (call `AntiNuke.reload_config_from_db`).
+4. Calls `_start_cache_listener()` — registers `pool.add_listener("fenrir_cache", …)` to receive PostgreSQL NOTIFY events from the API. Full payload contract:
+   - `user:{id}` — reload user cache in FenrirCoins/XPCog
+   - `premium:{id}:{plano}` — reload cache + call `PixCog.grant_premium_rewards`
+   - `config:{guild_id}` — reload `server_config`
+   - `antispam:{guild_id}` — call `AntiSpam.reload_config_from_db`
+   - `antinuke:{guild_id}` — call `AntiNuke.reload_config_from_db`
+   - `feature:{guild_id}:{feature}` — call `cog.reload_feature_state()` on the cog mapped in `_FEATURE_COG_MAP` (main.py)
 
 On `on_ready`, it posts/refreshes persistent embeds in fixed channels (status, colors, pix plans, tickets) — all channel IDs are resolved via `bot.config.get("key")` (Phase 2 complete).
+
+**Current operating model:** all extensions under `cogs/` with `setup()` are auto-loaded at startup, so most features are effectively enabled by default unless they self-degrade because of missing config, missing permissions, or missing external credentials. The system is only partially configuration-driven today; some areas already use `server_config` and feature-specific tables, while others still depend on hardcoded IDs and defaults.
 
 **Cog system:** Each entry-point module (file or package with `setup()` in `__init__.py`) defines `async def setup(bot)`. Cogs communicate with each other via `bot.get_cog("CogName")` — always check for `None`. Cogs that need the database access `bot.db` (the asyncpg pool) and `bot.config` (the cached `ServerConfig`); both can be `None` in degraded mode.
 
 **Branches (post-unification):**
-- **`main`** — unified bot: economy, XP, guilds, shop, Mercado Pago, Riot/Steam/GNews APIs **plus** antinuke, antispam, invite blocker, auto-remove bots. **25 cogs** total (4 of them brought from `fenrir_security` in Phase 1).
+- **`main`** — unified bot: economy, XP, guilds, shop, Mercado Pago, Riot/Steam/GNews APIs **plus** antinuke, antispam, invite blocker, auto-remove bots. The current loader finds **26 extension entry points** with `setup()`.
 - **`fenrir_security`** — historical branch; no longer the source of truth. Kept for git archeology.
 
 **Cogs ported in Phase 1:**
@@ -84,12 +92,20 @@ On `on_ready`, it posts/refreshes persistent embeds in fixed channels (status, c
 - `/health` — liveness + readiness (ping DB)
 - `/auth/*` — Discord OAuth2 (`/authorize`, `/callback`, `/logout`, `/me`). Dependência `require_admin` exportada de `api/routers/auth.py`; em desenvolvimento (JWT_SECRET padrão) a validação é dispensada automaticamente.
 - `/webhooks/mercadopago` — valida HMAC `x-signature`, processa pagamento aprovado em background, atualiza `users.premium` e envia `pg_notify('fenrir_cache', 'premium:{id}:{plano}')`.
-- `/config/{guild_id}` — lê/atualiza `server_config`; PATCH envia `pg_notify('fenrir_cache', 'config:{guild_id}')` para o bot recarregar sem restart.
-- `/items` — CRUD completo de itens da loja.
-- `/users` — listagem paginada, consulta individual, atualização de premium.
+- `/config/{guild_id}` — lê/atualiza `server_config`; PATCH requer admin e envia `pg_notify('fenrir_cache', 'config:{guild_id}')` para o bot recarregar sem restart.
+- `/items` — CRUD de itens da loja; GET é público, POST/PATCH/DELETE requerem admin.
+- `/users` — listagem paginada e consulta individual (públicas); PATCH `/users/{id}/premium` requer admin e emite `pg_notify('fenrir_cache', 'user:{id}')`.
 - `/antispam/config/{guild_id}` — lê/atualiza `antispam_config` (requer admin); PATCH envia NOTIFY.
 - `/antispam/audit/{guild_id}` — listagem paginada de `antispam_audit` com filtro por usuário (requer admin).
 - `/antinuke/config/{guild_id}` — lê/atualiza `antinuke_config` (requer admin); PATCH envia NOTIFY.
+- `/features/{guild_id}` — lista features com estado `enabled` (requer admin).
+- `/features/{guild_id}/validation` — roda todos os validadores e retorna erros por feature (requer admin).
+- `/features/{guild_id}/{feature}` — PUT habilita/desabilita feature; emite `pg_notify('fenrir_cache', 'feature:{guild_id}:{feature}')` (requer admin).
+
+Important current-state note:
+- `require_admin` is applied on `antispam`, `antinuke`, `features`, `config` (PATCH), `items` (POST/PATCH/DELETE), `users` (PATCH premium), `global-config` (PATCH), and `premium` (PUT catalog) routers.
+- `PATCH /users/{user_id}/premium` emits `pg_notify('fenrir_cache', 'user:{id}')` after updating the DB (Phase 6 fix).
+- GET endpoints on `config`, `items`, `users`, and `premium/catalog` remain public.
 
 **`repositories/` package** (Phases 3–6) — thin async wrappers over asyncpg for the bot's hot path:
 - `repositories/items.py` — `get_all`, `get_by_id`, `create`, `delete_one`, `delete_all`
@@ -157,6 +173,7 @@ Key invariants for any new code:
 - **Resilience contract**: if `bot.db is None`, the bot logs a warning and continues in JSON mode. Code paths that touch the DB must check `self.use_db` (cogs) or `if self.bot.db is not None` (elsewhere).
 - **New state goes to Postgres** — do NOT add JSON files. If a cog needs a new persistent field, add a column to the appropriate table and expose it through `repositories/`. Guild and adventure data are now Postgres-backed; all cogs use dual-mode DB/JSON with `self.use_db` and `cog_load()` pattern.
 - **Cache invalidation is cross-process via NOTIFY** — when the API updates any shared state (premium, server_config, antispam/antinuke config), it must call `pg_notify('fenrir_cache', '<kind>:<id>')`. The bot's listener handles the rest. Never rely on TTL expiry alone for admin operations.
+- **NOTIFY contract is complete (Phase 6):** `PATCH /config` emits `config:`, `PATCH /users/{id}/premium` emits `user:`, `PUT /features/{guild_id}/{feature}` emits `feature:`. All mutating endpoints on config/users/items/features use `Depends(require_admin)`.
 - **API auth**: new endpoints that mutate config must use `Depends(require_admin)` from `api/routers/auth.py`. The dependency is a no-op in dev mode (JWT_SECRET at default value); set a real secret in production via `JWT_SECRET` env var.
 
 ## Phase 6 details: Guilds + Adventures

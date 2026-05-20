@@ -18,6 +18,7 @@ from .routers import antinuke as antinuke_router
 from .routers import antispam as antispam_router
 from .routers import auth as auth_router
 from .routers import config as config_router
+from .routers import features as features_router
 from .routers import global_config as global_config_router
 from .routers import items as items_router
 from .routers import premium as premium_router
@@ -71,6 +72,7 @@ async def health() -> Dict[str, Any]:
 app.include_router(auth_router.router)
 app.include_router(webhooks_router.router)
 app.include_router(config_router.router)
+app.include_router(features_router.router)
 app.include_router(global_config_router.router)
 app.include_router(items_router.router)
 app.include_router(premium_router.router)

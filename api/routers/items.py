@@ -7,10 +7,11 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, status, Response
+from fastapi import APIRouter, Depends, HTTPException, status, Response
 from pydantic import BaseModel, Field
 
 from .. import db as api_db
+from .auth import require_admin
 
 router = APIRouter(prefix="/items", tags=["items"])
 
@@ -47,7 +48,7 @@ async def get_item(item_id: int) -> Dict[str, Any]:
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED, response_model=Dict[str, Any])
-async def create_item(body: ItemCreate) -> Dict[str, Any]:
+async def create_item(body: ItemCreate, _=Depends(require_admin)) -> Dict[str, Any]:
     async with api_db.acquire() as conn:
         row = await conn.fetchrow(
             "INSERT INTO items (nome, preco, descricao, cooldown_h, criado_por) "
@@ -62,7 +63,7 @@ async def create_item(body: ItemCreate) -> Dict[str, Any]:
 
 
 @router.patch("/{item_id}", response_model=Dict[str, Any])
-async def update_item(item_id: int, body: ItemUpdate) -> Dict[str, Any]:
+async def update_item(item_id: int, body: ItemUpdate, _=Depends(require_admin)) -> Dict[str, Any]:
     updates = body.model_dump(exclude_none=True)
     if not updates:
         raise HTTPException(
@@ -83,7 +84,7 @@ async def update_item(item_id: int, body: ItemUpdate) -> Dict[str, Any]:
 
 
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_item(item_id: int) -> Response:
+async def delete_item(item_id: int, _=Depends(require_admin)) -> Response:
     async with api_db.acquire() as conn:
         row = await conn.fetchrow(
             "DELETE FROM items WHERE id = $1 RETURNING id", item_id

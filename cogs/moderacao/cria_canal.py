@@ -180,11 +180,25 @@ class VoiceCreator(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.main_channel_id = _DEFAULT_VOICE_CREATOR_CH
+        self.feature_enabled: bool = True
         self.cleanup_loop.start()
 
     async def cog_load(self) -> None:
         cfg = getattr(self.bot, "config", None)
         self.main_channel_id = (cfg.get("voice_creator_channel_id") if cfg else None) or _DEFAULT_VOICE_CREATOR_CH
+        if self.bot.db is not None:
+            guild_id = (cfg.get("guild_id") if cfg else None)
+            if guild_id:
+                from db.feature_config import is_feature_enabled
+                self.feature_enabled = await is_feature_enabled(self.bot.db, guild_id, "voice_creator")
+
+    async def reload_feature_state(self) -> None:
+        await self.cog_load()
+
+    async def validate_feature_config(self) -> list:
+        from db.validators import validate_voice_creator
+        cfg = getattr(self.bot, "config", None)
+        return validate_voice_creator(dict(cfg) if cfg else {})
 
     def cog_unload(self):
         self.cleanup_loop.cancel()
@@ -204,6 +218,8 @@ class VoiceCreator(commands.Cog):
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
+        if not self.feature_enabled:
+            return
         if after.channel and after.channel.id == self.main_channel_id:
             guild = member.guild
             category = after.channel.category

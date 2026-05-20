@@ -21,6 +21,11 @@ class TicketView(discord.ui.View):
         try:
             await interaction.response.defer(ephemeral=True)
 
+            ticket_cog = interaction.client.get_cog("TicketCog")
+            if ticket_cog and not ticket_cog.feature_enabled:
+                await interaction.followup.send("❌ O sistema de tickets não está habilitado neste servidor.", ephemeral=True)
+                return
+
             cfg = getattr(interaction.client, "config", None)
             servidor = interaction.guild
             usuario = interaction.user
@@ -106,7 +111,25 @@ class TicketView(discord.ui.View):
 class TicketCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        
+        self.feature_enabled: bool = True
+
+    async def cog_load(self) -> None:
+        if self.bot.db is not None:
+            cfg = getattr(self.bot, "config", None)
+            guild_id = (cfg.get("guild_id") if cfg else None)
+            if guild_id:
+                from db.feature_config import is_feature_enabled
+                self.feature_enabled = await is_feature_enabled(self.bot.db, guild_id, "tickets")
+
+    async def reload_feature_state(self) -> None:
+        await self.cog_load()
+
+    async def validate_feature_config(self) -> list:
+        """Retorna lista de erros de configuração. Lista vazia = config válida."""
+        from db.validators import validate_tickets
+        cfg = getattr(self.bot, "config", None)
+        return validate_tickets(dict(cfg) if cfg else {})
+
     async def ticket(self, canal: discord.TextChannel):
         try:
             embed = discord.Embed(

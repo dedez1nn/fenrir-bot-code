@@ -11,6 +11,18 @@ _DEFAULT_LEAVE_LOG_CH = 1427472688665854133
 class MemberLogs(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.feature_enabled: bool = True
+
+    async def cog_load(self) -> None:
+        if self.bot.db is not None:
+            cfg = getattr(self.bot, "config", None)
+            guild_id = (cfg.get("guild_id") if cfg else None)
+            if guild_id:
+                from db.feature_config import is_feature_enabled
+                self.feature_enabled = await is_feature_enabled(self.bot.db, guild_id, "member_logs")
+
+    async def reload_feature_state(self) -> None:
+        await self.cog_load()
 
     def _cfg(self, key: str, default: int) -> int:
         c = getattr(self.bot, "config", None)
@@ -28,6 +40,8 @@ class MemberLogs(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
+        if not self.feature_enabled:
+            return
         channel = member.guild.get_channel(self._cfg("member_join_log_channel_id", _DEFAULT_JOIN_LOG_CH))
         _cfg = getattr(self.bot, "config", None)
         _tickets_id = _cfg.get("tickets_channel_id") if _cfg else None
@@ -56,6 +70,8 @@ class MemberLogs(commands.Cog):
             
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
+        if not self.feature_enabled:
+            return
         canal = self.bot.get_channel(self._cfg("member_leave_log_channel_id", _DEFAULT_LEAVE_LOG_CH))
         if canal:
             embed = discord.Embed(
