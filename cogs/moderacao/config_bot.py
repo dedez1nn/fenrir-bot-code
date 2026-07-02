@@ -266,11 +266,28 @@ class ConfigBotView(discord.ui.View):
                 description="Todas as configurações foram salvas com sucesso!",
                 color=discord.Color.green()
             )
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            try:
+                await interaction.edit_original_response(embed=embed, view=None)
+            except:
+                try:
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+                except:
+                    pass
 
         except Exception as e:
             log.error(f"Erro ao salvar configurações: {e}")
-            await interaction.followup.send(f"❌ Erro ao salvar: {e}", ephemeral=True)
+            try:
+                embed = discord.Embed(
+                    title="❌ Erro ao Salvar",
+                    description=f"Erro: {e}",
+                    color=discord.Color.red()
+                )
+                await interaction.edit_original_response(embed=embed, view=None)
+            except:
+                try:
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+                except:
+                    pass
 
 
 class ConfigBotCog(commands.Cog):
@@ -287,10 +304,21 @@ class ConfigBotCog(commands.Cog):
             await interaction.response.send_message("❌ Você precisa ser administrador para usar este comando.", ephemeral=True)
             return
 
-        await interaction.response.defer(ephemeral=True)
-
         if not self.bot.db:
-            await interaction.followup.send("❌ Banco de dados não disponível.", ephemeral=True)
+            await interaction.response.send_message("❌ Banco de dados não disponível.", ephemeral=True)
+            return
+
+        # Responder imediatamente com placeholder
+        loading_embed = discord.Embed(
+            title="⚙️ Carregando Configuração...",
+            description="Aguarde enquanto carregamos as configurações da guild.",
+            color=discord.Color.blurple()
+        )
+
+        try:
+            await interaction.response.send_message(embed=loading_embed, ephemeral=True)
+        except Exception as e:
+            log.error(f"Erro ao responder: {e}")
             return
 
         try:
@@ -298,26 +326,35 @@ class ConfigBotCog(commands.Cog):
 
             config = await load_server_config(self.bot.db, interaction.guild_id)
             if not config:
-                await interaction.followup.send("❌ Configuração da guild não encontrada.", ephemeral=True)
+                await interaction.edit_original_response(
+                    embed=discord.Embed(
+                        title="❌ Erro",
+                        description="Configuração da guild não encontrada.",
+                        color=discord.Color.red()
+                    ),
+                    view=None
+                )
                 return
 
             config_data = config.to_dict()
-
-            embed = discord.Embed(
-                title="⚙️ Configuração do Bot - Passo 1/9",
-                description="Bem-vindo ao wizard de configuração! Use os botões para navegar.\n\n"
-                            "Este guia ajudará você a configurar todos os aspectos do bot de forma prática.",
-                color=discord.Color.blue()
-            )
-
             view = ConfigBotView(self.bot, interaction.guild_id, config_data, 1, 9)
             step_embed = await view.get_step_embed()
 
-            await interaction.followup.send(embed=step_embed, view=view, ephemeral=True)
+            await interaction.edit_original_response(embed=step_embed, view=view)
 
         except Exception as e:
             log.error(f"Erro ao iniciar config-bot: {e}")
-            await interaction.followup.send(f"❌ Erro: {e}", ephemeral=True)
+            try:
+                await interaction.edit_original_response(
+                    embed=discord.Embed(
+                        title="❌ Erro",
+                        description=f"Erro ao carregar: {e}",
+                        color=discord.Color.red()
+                    ),
+                    view=None
+                )
+            except Exception as edit_err:
+                log.error(f"Erro ao editar mensagem de erro: {edit_err}")
 
 
     @app_commands.command(name="config-canais-log", description="Configurar canais de log")
@@ -416,6 +453,107 @@ class ConfigBotCog(commands.Cog):
 
         except Exception as e:
             log.error(f"Erro ao configurar canais de log: {e}")
+            await interaction.followup.send(f"❌ Erro: {e}", ephemeral=True)
+
+    @app_commands.command(
+        name="config-canais-embeds",
+        description="Configurar canais das embeds: pix, ticket, cores, entrada e saída",
+    )
+    @app_commands.describe(
+        pix="Canal da embed de planos Pix/premium",
+        ticket="Canal da embed de tickets",
+        cores="Canal da embed de cores/cargos",
+        entrada="Canal de boas-vindas (entrada de membros)",
+        saida="Canal de log de saída de membros",
+    )
+    async def config_canais_embeds(
+        self,
+        interaction: discord.Interaction,
+        pix: discord.TextChannel = None,
+        ticket: discord.TextChannel = None,
+        cores: discord.TextChannel = None,
+        entrada: discord.TextChannel = None,
+        saida: discord.TextChannel = None,
+    ):
+        """Edita os canais das embeds fixas (pix/ticket/cores) e logs de entrada/saída."""
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ Você precisa ser administrador.", ephemeral=True)
+            return
+
+        if not self.bot.db:
+            await interaction.response.send_message("❌ Banco de dados não disponível.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            async with self.bot.db.acquire() as conn:
+                updates = []
+                params = [interaction.guild_id]
+                idx = 2
+
+                if pix:
+                    updates.append(f"pix_channel_id = ${idx}")
+                    params.append(pix.id)
+                    idx += 1
+
+                if ticket:
+                    updates.append(f"tickets_channel_id = ${idx}")
+                    params.append(ticket.id)
+                    idx += 1
+
+                if cores:
+                    updates.append(f"colors_channel_id = ${idx}")
+                    params.append(cores.id)
+                    idx += 1
+
+                if entrada:
+                    updates.append(f"member_join_log_channel_id = ${idx}")
+                    params.append(entrada.id)
+                    idx += 1
+
+                if saida:
+                    updates.append(f"member_leave_log_channel_id = ${idx}")
+                    params.append(saida.id)
+                    idx += 1
+
+                if not updates:
+                    await interaction.followup.send("⚠️ Nenhum canal foi especificado.", ephemeral=True)
+                    return
+
+                updates.append("updated_at = NOW()")
+                query = f"UPDATE server_config SET {', '.join(updates)} WHERE guild_id = $1"
+                await conn.execute(query, *params)
+
+                from db.config import refresh_server_config
+                await refresh_server_config(self.bot.db, interaction.guild_id)
+
+                async with self.bot.db.acquire() as conn:
+                    await conn.execute(
+                        "SELECT pg_notify('fenrir_cache', $1)",
+                        f"config:{interaction.guild_id}"
+                    )
+
+            embed = discord.Embed(
+                title="✅ Canais de Embeds Atualizados",
+                description="As embeds de pix/ticket/cores são (re)postadas nesses canais no próximo boot do bot.",
+                color=discord.Color.green()
+            )
+            if pix:
+                embed.add_field(name="💎 Pix", value=pix.mention, inline=True)
+            if ticket:
+                embed.add_field(name="🎫 Ticket", value=ticket.mention, inline=True)
+            if cores:
+                embed.add_field(name="🎨 Cores", value=cores.mention, inline=True)
+            if entrada:
+                embed.add_field(name="👋 Entrada", value=entrada.mention, inline=True)
+            if saida:
+                embed.add_field(name="🚪 Saída", value=saida.mention, inline=True)
+
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            log.error(f"Erro ao configurar canais de embeds: {e}")
             await interaction.followup.send(f"❌ Erro: {e}", ephemeral=True)
 
     @app_commands.command(name="config-economia", description="Configurar ganhos de moeda")

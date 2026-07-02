@@ -282,8 +282,34 @@ class FenrirBot(commands.Bot):
         )
         return True
 
+    async def _init_copa_db(self) -> None:
+        """Inicializa o MongoDB usado pelas cogs da Copa 2026 (cogs/copa/).
+
+        Tolerante a falha, no mesmo espírito de `_init_database()`: se o Mongo
+        estiver indisponível, loga aviso e segue. As cogs da Copa checam o
+        estado internamente (gate/canais) e degradam sem derrubar o bot.
+        """
+        try:
+            from services.db import init_db as init_copa_db
+            await init_copa_db()
+            log.info("MongoDB (Copa 2026) conectado.")
+        except Exception as exc:
+            log.warning("MongoDB (Copa 2026) indisponível: %s — cogs da Copa podem degradar.", exc)
+
+    async def _safe_load_extension(self, module: str) -> None:
+        """Carrega uma extensão isolando falhas.
+
+        Uma cog quebrada (import faltando, dependência externa indisponível)
+        loga o erro mas não impede o carregamento das demais nem derruba o boot.
+        """
+        try:
+            await self.load_extension(module)
+        except Exception:
+            log.error("Falha ao carregar a cog '%s':\n%s", module, traceback.format_exc())
+
     async def setup_hook(self):
         await self._init_database()
+        await self._init_copa_db()
 
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
         COGS_DIR = os.path.join(BASE_DIR, "cogs")
@@ -297,7 +323,7 @@ class FenrirBot(commands.Bot):
             if os.path.exists(init_path) and _module_defines_setup(init_path):
                 rel = os.path.relpath(root, BASE_DIR)
                 module = rel.replace(os.sep, ".")
-                await self.load_extension(module)
+                await self._safe_load_extension(module)
                 dirs[:] = []  # não recursar — submódulos já vêm pelo pacote
                 continue
 
@@ -305,7 +331,7 @@ class FenrirBot(commands.Bot):
                 if filename.endswith(".py") and filename != "__init__.py":
                     rel = os.path.relpath(os.path.join(root, filename), BASE_DIR)
                     module = rel.replace(os.sep, ".")[:-3]
-                    await self.load_extension(module)
+                    await self._safe_load_extension(module)
 
         await self.tree.sync()
         await self._start_cache_listener()
@@ -354,30 +380,27 @@ class FenrirBot(commands.Bot):
         if cores_cog:
             canal_cores = self._cfg_channel("colors_channel_id")
             if canal_cores:
-                async for message in canal_cores.history(limit=10):
-                    if message.author == self.user:
-                        await message.delete()
-                        await asyncio.sleep(0.5)
+                # Idempotente: view persistente (cores_dropdown) registrada no
+                # cog_load mantém o dropdown vivo após restart — sem reenviar.
                 await cores_cog.cores(canal_cores)
 
         pix_cog = self.get_cog("PixCog")
         if pix_cog:
             canal_pix = self._cfg_channel("pix_channel_id")
             if canal_pix:
-                async for message in canal_pix.history(limit=10):
-                    if message.author == self.user:
-                        await message.delete()
-                        await asyncio.sleep(0.5)
+                # Idempotente: só posta se a embed persistente ainda não existir.
+                # A view foi re-registrada no cog_load do PixCog (custom_id fixo),
+                # então o dropdown da mensagem já postada segue funcionando após
+                # restart — sem apagar e reenviar a cada boot.
                 await pix_cog.setup_planos_embed(canal_pix)
 
         ticket_cog = self.get_cog("TicketCog")
         if ticket_cog:
             canal_ticket = self._cfg_channel("tickets_channel_id")
             if canal_ticket:
-                async for message in canal_ticket.history(limit=10):
-                    if message.author == self.user:
-                        await message.delete()
-                        await asyncio.sleep(0.5)
+                # Idempotente: views persistentes (abrir_suporte/doacao + fechar)
+                # registradas no cog_load mantêm o painel e os botões dos tickets
+                # abertos funcionando após restart — sem reenviar.
                 await ticket_cog.ticket(canal_ticket)
 
 

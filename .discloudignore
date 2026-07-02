@@ -1,0 +1,41 @@
+# ─── Ambiente / caches ────────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.cache/
+.pytest_cache/
+
+# ─── Segredos / variáveis locais ──────────────────────────────────────────────
+.env
+*.env
+
+# ─── Git / editores / agentes ─────────────────────────────────────────────────
+.git/
+.gitignore
+.idea/
+.vscode/
+.claude/
+.agents/
+.codex/
+
+# ─── Testes e documentação (não usados em runtime) ────────────────────────────
+tests/
+docs/
+*.md
+erros_config.md
+
+# ─── Docker (deploy é via Discloud, não Docker) ───────────────────────────────
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# ─── Logs e bancos locais ─────────────────────────────────────────────────────
+logs/
+*.log
+*.db
+*.sqlite3

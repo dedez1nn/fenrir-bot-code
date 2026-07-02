@@ -98,9 +98,8 @@ class TicketView(discord.ui.View):
                 color=discord.Color.blue() if tipo == "suporte" else discord.Color.green()
             )
             
-            view = discord.ui.View()
-            view.add_item(FecharTicketButton())
-            
+            view = FecharTicketView()
+
             mensagem = await novo_canal.send(embed=embed, view=view)
             
             await interaction.followup.send(f"✅ Ticket criado com sucesso: {novo_canal.mention}", ephemeral=True)
@@ -126,6 +125,20 @@ class TicketCog(commands.Cog):
                 self.feature_enabled = await is_feature_enabled(self.bot.db, guild_id, "tickets")
         await self._persist_validation()
 
+        # Views persistentes: re-registra o painel (abrir suporte/doação) e os
+        # botões internos de fechar/confirmar (custom_id fixo + timeout=None),
+        # para que a embed já postada e os botões dentro dos tickets abertos
+        # continuem funcionando após restart, sem reenviar nada.
+        for v in (TicketView(), FecharTicketView(), ConfirmarFecharView()):
+            try:
+                self.bot.add_view(v)
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "TicketCog: falha ao registrar view persistente %s: %s",
+                    type(v).__name__, exc,
+                )
+
     async def reload_feature_state(self) -> None:
         await self.cog_load()
 
@@ -135,8 +148,39 @@ class TicketCog(commands.Cog):
         cfg = getattr(self.bot, "config", None)
         return validate_tickets(dict(cfg) if cfg else {})
 
-    async def ticket(self, canal: discord.TextChannel):
+    async def ticket(self, canal: discord.TextChannel, force: bool = False):
         try:
+            # Idempotência + persistência: se o painel já está postado (mensagem
+            # com o botão de custom_id "abrir_suporte"), não reenvia.
+            persistente = None
+            obsoletas = []
+            async for message in canal.history(limit=25):
+                if message.author != self.bot.user:
+                    continue
+                tem_cid = any(
+                    getattr(child, "custom_id", None) == "abrir_suporte"
+                    for row in message.components
+                    for child in getattr(row, "children", [])
+                )
+                if tem_cid:
+                    persistente = message
+                elif message.components or message.embeds:
+                    obsoletas.append(message)
+
+            if persistente and not force:
+                for m in obsoletas:
+                    try:
+                        await m.delete()
+                    except Exception:
+                        pass
+                return
+
+            for m in obsoletas + ([persistente] if (persistente and force) else []):
+                try:
+                    await m.delete()
+                except Exception:
+                    pass
+
             embed = discord.Embed(
                 title="🎫 Sistema de Tickets",
                 description=(
@@ -348,10 +392,8 @@ class FecharTicketButton(discord.ui.Button):
                 color=discord.Color.orange()
             )
             
-            view = discord.ui.View()
-            view.add_item(ConfirmarFecharButton())
-            view.add_item(CancelarFecharButton())
-            
+            view = ConfirmarFecharView()
+
             await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
             
         except Exception as e:
@@ -412,6 +454,22 @@ class CancelarFecharButton(discord.ui.Button):
     
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.edit_message(content="✅ Ação cancelada.", embed=None, view=None)
+
+
+class FecharTicketView(discord.ui.View):
+    """View persistente do botão 'Fechar Ticket' dentro de cada canal de ticket."""
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(FecharTicketButton())
+
+
+class ConfirmarFecharView(discord.ui.View):
+    """View persistente do diálogo de confirmação de fechamento."""
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(ConfirmarFecharButton())
+        self.add_item(CancelarFecharButton())
+
 
 async def setup(bot):
     await bot.add_cog(TicketCog(bot))

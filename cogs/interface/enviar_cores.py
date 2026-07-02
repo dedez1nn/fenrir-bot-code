@@ -60,12 +60,55 @@ class EnviarCores(commands.Cog):
         from db.feature_config import validate_and_save_for_cog
         await validate_and_save_for_cog(self.bot, "colors", self)
 
+        # View persistente: re-registra o dropdown de cores (custom_id fixo +
+        # timeout=None) para que a embed já postada continue funcionando após
+        # restart, sem reenviar. As options reais são preenchidas na mensagem;
+        # o dispatch é feito só pelo custom_id, então options=[] aqui basta.
+        try:
+            self.bot.add_view(CoresView([]))
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning(
+                "EnviarCores: falha ao registrar view persistente: %s", exc
+            )
+
     async def validate_feature_config(self) -> list:
         from db.validators import validate_colors
         cfg = getattr(self.bot, "config", None)
         return validate_colors(cfg.to_dict() if cfg else {})
 
-    async def cores(self, channel):
+    async def cores(self, channel, force: bool = False):
+        # Idempotência + persistência: se o painel de cores já está postado
+        # (mensagem com o dropdown de custom_id "cores_dropdown"), não reenvia.
+        persistente = None
+        obsoletas = []
+        async for message in channel.history(limit=25):
+            if message.author != self.bot.user:
+                continue
+            tem_cid = any(
+                getattr(child, "custom_id", None) == "cores_dropdown"
+                for row in message.components
+                for child in getattr(row, "children", [])
+            )
+            if tem_cid:
+                persistente = message
+            elif message.components or message.embeds:
+                obsoletas.append(message)
+
+        if persistente and not force:
+            for m in obsoletas:
+                try:
+                    await m.delete()
+                except Exception:
+                    pass
+            return
+
+        for m in obsoletas + ([persistente] if (persistente and force) else []):
+            try:
+                await m.delete()
+            except Exception:
+                pass
+
         embed = discord.Embed(
             title="🎨 Cores Disponíveis",
             description="Visualize os **padrões** de cores **disponíveis**:",

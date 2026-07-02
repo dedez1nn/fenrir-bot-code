@@ -20,6 +20,11 @@ log = logging.getLogger(__name__)
 
 TOKEN = os.getenv("ACCESS_TOKEN")
 
+# custom_id fixo do dropdown de planos. É o que torna a view persistente:
+# permite que o discord.py roteie o Select da mensagem existente para o callback
+# após um restart, sem precisar reenviar a embed.
+PIX_PLANOS_SELECT_CID = "pix:planos_select"
+
 
 class PixCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -80,6 +85,14 @@ class PixCog(commands.Cog):
                 log.warning("PixCog: falha ao carregar premium_catalog, usando defaults: %s", exc)
         from db.feature_config import validate_and_save_for_cog
         await validate_and_save_for_cog(self.bot, "premium", self)
+
+        # View persistente: re-registra o dropdown de planos para que as
+        # interações da embed já postada continuem funcionando após restart,
+        # sem reenviar a mensagem. Requer custom_id fixo + timeout=None.
+        try:
+            self.bot.add_view(PlanosSelectView())
+        except Exception as exc:
+            log.warning("PixCog: falha ao registrar view persistente de planos: %s", exc)
 
     async def reload_feature_state(self) -> None:
         if self.bot.db is not None:
@@ -173,20 +186,52 @@ class PixCog(commands.Cog):
         if not self.emoji_timer:
             self.emoji_timer = "⏰"
 
-    async def setup_planos_embed(self, canal: discord.TextChannel):
+    async def setup_planos_embed(self, canal: discord.TextChannel, force: bool = False):
         try:
-            await self.carregar_emojis(canal.guild)
-            
             if not canal:
                 print("❌ Canal não encontrado.")
                 return
 
-            deleted_count = 0
-            async for message in canal.history(limit=10):
-                if message.author == self.bot.user:
-                    await message.delete()
-                    deleted_count += 1
+            await self.carregar_emojis(canal.guild)
+
+            # Idempotência + persistência: procura a embed de planos já postada.
+            # `persistente` = mensagem que já tem o dropdown com o custom_id atual
+            #                 (a view re-registrada no cog_load cuida das interações).
+            # `obsoletas`   = mensagens antigas do bot (sem o custom_id) a limpar.
+            persistente = None
+            obsoletas = []
+            async for message in canal.history(limit=25):
+                if message.author != self.bot.user:
+                    continue
+                tem_cid = any(
+                    getattr(child, "custom_id", None) == PIX_PLANOS_SELECT_CID
+                    for row in message.components
+                    for child in getattr(row, "children", [])
+                )
+                if tem_cid:
+                    persistente = message
+                elif message.components or message.embeds:
+                    obsoletas.append(message)
+
+            if persistente and not force:
+                # Já existe a embed persistente — NÃO reenvia. Só remove
+                # duplicatas antigas sem custom_id, se houver.
+                for m in obsoletas:
+                    try:
+                        await m.delete()
+                        await asyncio.sleep(0.5)
+                    except Exception:
+                        pass
+                return
+
+            # Sem embed persistente (primeiro deploy) ou force=True:
+            # remove versões antigas/duplicadas e posta uma nova persistente.
+            for m in obsoletas + ([persistente] if (persistente and force) else []):
+                try:
+                    await m.delete()
                     await asyncio.sleep(0.5)
+                except Exception:
+                    pass
 
             embed = discord.Embed(
                 title=f"{self.emoji_controle} Premium - Alcateia do Fenrir",
@@ -703,15 +748,16 @@ class PixCog(commands.Cog):
         await asyncio.sleep(5)
 
 class PlanosSelectView(discord.ui.View):
-    def __init__(self, emoji_selecao, emoji_aventureiro, emoji_lendario, emoji_mitico):
+    def __init__(self, emoji_selecao=None, emoji_aventureiro=None, emoji_lendario=None, emoji_mitico=None):
         super().__init__(timeout=None)
         self.emoji_selecao = emoji_selecao
         self.emoji_aventureiro = emoji_aventureiro
         self.emoji_lendario = emoji_lendario
         self.emoji_mitico = emoji_mitico
-        
+
         self.select = discord.ui.Select(
-            placeholder="Selecione seu plano...",   
+            custom_id=PIX_PLANOS_SELECT_CID,
+            placeholder="Selecione seu plano...",
             options=[
                 discord.SelectOption(label="Aventureiro", value="aventureiro", emoji=self.emoji_aventureiro),
                 discord.SelectOption(label="Lendário", value="lendario", emoji=self.emoji_lendario),

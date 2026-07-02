@@ -8,3 +8,7 @@ mercadopago
 pytest
 pytest-asyncio
 asyncpg==0.29.0
+
+# ─── Copa 2026 (cogs/copa/ + services/) ───────────────────────────────────────
+motor>=3.3.0        # MongoDB async (canais copa/selfbot/comandos)
+curl-cffi>=0.7.4    # cliente HTTP resiliente para a FIFA API

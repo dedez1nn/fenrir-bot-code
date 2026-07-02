@@ -205,3 +205,10 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# ─── Copa 2026 (cogs/copa/ + services/) ───────────────────────────────────────
+# O cache da FIFA API e as fotos de jogadores ficam em ~/.cache/copa2026-discord
+# (fora do repo). Ignora qualquer cópia local acidental do cache.
+.cache/copa2026-discord/
+copa2026-discord/
+# assets/ (bg_chaveamento.jpg + fonts) É versionado — não ignorar.
