@@ -1,3 +1,5 @@
+from typing import Literal
+
 import discord
 from discord.ext import commands
 from datetime import datetime
@@ -71,6 +73,38 @@ class StatusCog(commands.Cog):
         embed.set_footer(text="© 2025 ALCATEIA DO FENRIR. Todos os direitos reservados.")
 
         await ctx.send(embed=embed)
+
+    @commands.command(name="status-mensagem")
+    @commands.has_permissions(administrator=True)
+    async def status_mensagem(self, ctx: commands.Context, estado: Literal["on", "off"]):
+        """Liga/desliga o embed de status postado em on_ready (desabilitado por padrão)."""
+        if not self.bot.db:
+            await ctx.send("❌ Banco de dados não disponível.")
+            return
+
+        enabled = estado == "on"
+        try:
+            async with self.bot.db.acquire() as conn:
+                await conn.execute(
+                    "UPDATE server_config SET status_message_enabled = $2, updated_at = NOW() WHERE guild_id = $1",
+                    ctx.guild.id,
+                    enabled,
+                )
+                await conn.execute(
+                    "SELECT pg_notify('fenrir_cache', $1)", f"config:{ctx.guild.id}"
+                )
+
+            from db.config import refresh_server_config
+            await refresh_server_config(self.bot.db, ctx.guild.id)
+        except Exception as e:
+            await ctx.send(f"❌ Erro: {e}")
+            return
+
+        estado_txt = "ativado ✅" if enabled else "desativado ❌"
+        await ctx.send(
+            f"Mensagem de status {estado_txt}. "
+            "Aplica no próximo `on_ready` (restart ou reconexão do bot)."
+        )
 
     @commands.command(name="changelog")
     async def changelog(self, ctx):

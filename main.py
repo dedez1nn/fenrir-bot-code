@@ -352,7 +352,7 @@ class FenrirBot(commands.Bot):
         )
 
         status_cog = self.get_cog("StatusCog")
-        if status_cog:
+        if status_cog and self.config is not None and self.config.get("status_message_enabled", False):
             canal_status = self._cfg_channel("status_channel_id")
             if canal_status:
                 async for message in canal_status.history(limit=10):

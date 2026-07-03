@@ -146,6 +146,7 @@ PAGES = [
             ("!removerole-all <cargo>", "Remove um cargo de todos os usuários *(ADM)*"),
             ("!limpar <mensagens>", "Apaga o número de mensagens desejado do canal *(ADM)*"),
             ("!manutencao", "Envia mensagem de reinício *(ADM)*"),
+            ("!status-mensagem <on|off>", "Liga/desliga o embed de status em on_ready (desligado por padrão) *(ADM)*"),
             ("!config-bot", "Wizard completo de configuração do bot *(ADM)*"),
             ("!config_status", "Diagnóstico de configuração *(ADM)*"),
             ("!config-canais-log / !config-canais-embeds / !config-canais-sistemas", "Configuram canais do bot *(ADM)*"),
