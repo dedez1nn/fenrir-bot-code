@@ -561,6 +561,37 @@ class CopaCog(commands.Cog):
             return
         await ctx.send(f"✅ Resumo enviado ({len(jogos)} jogo(s)).")
 
+    @commands.command(name="escalacao")
+    @commands.has_permissions(administrator=True)
+    async def cmd_escalacao(self, ctx: commands.Context) -> None:
+        """Envia a escalação (lineup) da partida mais próxima, se já publicada pela FIFA."""
+        try:
+            matches = await asyncio.to_thread(copa_svc.get_jogos_rodada)
+        except Exception:
+            await ctx.send("❌ Erro ao buscar jogos.")
+            return
+
+        now = time.time()
+        upcoming = sorted(
+            [m for m in matches if m["status"] == "notstarted" and m["date_ts"] > now],
+            key=lambda m: m["date_ts"],
+        )
+        if not upcoming:
+            await ctx.send("Nenhuma partida agendada encontrada.")
+            return
+
+        m = upcoming[0]
+        embed = await monitor.check_lineup(m)
+        if embed is None:
+            hora = datetime.fromtimestamp(m["date_ts"], tz=BRT).strftime("%d/%m %H:%M")
+            await ctx.send(
+                f"⚠️ Escalação de **{m['home_pt']} x {m['away_pt']}** ({hora} BRT) "
+                "ainda não foi publicada pela FIFA."
+            )
+            return
+
+        await ctx.send(embed=embed)
+
     @commands.command(name="config-copa")
     @commands.has_permissions(administrator=True)
     async def cmd_config_copa(
