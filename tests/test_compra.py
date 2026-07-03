@@ -13,7 +13,15 @@ def bot():
     bot.get_cog = Mock()
     bot.get_user = Mock()
     bot.get_channel = Mock()
-    bot.config = {"xp_log_channel_id": 1426205118293868748}  # Mock config for modals
+    bot.config = {
+        "xp_log_channel_id": 1426205118293868748,
+        # Cores premium agora vêm da config (server_config.premium_color_role_ids),
+        # não mais de IDs hardcoded no cog.
+        "premium_color_role_ids": [
+            1428400034952515696, 1428400132272951358,
+            1428399718945390764, 1428399137057013783,
+        ],
+    }  # Mock config for modals
     return bot
 
 @pytest.fixture
@@ -326,6 +334,7 @@ class TestCompraCog:
         modal = CorPremiumModal(compra_cog, 123456, None)
         modal.cor_select = Mock()
         modal.cor_select.value = "1"
+        interaction.client = compra_cog.bot
         guild = Mock()
         member = AsyncMock()
         member.roles = []
@@ -357,6 +366,7 @@ class TestCompraCog:
         modal = CorPremiumModal(compra_cog, 123456, None)
         modal.cor_select = Mock()
         modal.cor_select.value = "1"
+        interaction.client = compra_cog.bot
         interaction.guild.get_member.return_value = None
         await modal.on_submit(interaction)
         interaction.response.send_message.assert_called_once_with(
@@ -369,6 +379,7 @@ class TestCompraCog:
         modal = CorPremiumModal(compra_cog, 123456, None)
         modal.cor_select = Mock()
         modal.cor_select.value = "1"
+        interaction.client = compra_cog.bot
         member = AsyncMock()
         interaction.guild.get_member.return_value = member
         interaction.guild.get_role.return_value = None
@@ -383,6 +394,7 @@ class TestCompraCog:
         modal = CorPremiumModal(compra_cog, 123456, None)
         modal.cor_select = Mock()
         modal.cor_select.value = "2"
+        interaction.client = compra_cog.bot
         guild = Mock()
         member = AsyncMock()
         cargo_antigo = Mock()

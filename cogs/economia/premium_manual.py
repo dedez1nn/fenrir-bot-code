@@ -139,7 +139,9 @@ class PremiumCog(commands.Cog):
 
     async def enviar_log_expiracao(self, user: discord.User, plano_expirado: str):
         try:
-            canal_log = self.bot.get_channel(1429919086934097950)
+            canal_log = self.bot.get_channel(
+                self.bot.config.get("premium_log_channel_id") if self.bot.config else None
+            )
             if canal_log:
                 plano_info = self.planos_info.get(plano_expirado, {})
                 nome_plano = plano_info.get('nome', plano_expirado.title())
@@ -450,7 +452,9 @@ class PremiumCog(commands.Cog):
                 
                 await interaction.followup.send(mensagem, ephemeral=True)
             
-            canal_log = self.bot.get_channel(1429919086934097950)
+            canal_log = self.bot.get_channel(
+                self.bot.config.get("premium_log_channel_id") if self.bot.config else None
+            )
             if canal_log:
                 embed_log = discord.Embed(
                     title="🔧 Plano Premium Modificado (ADM)",

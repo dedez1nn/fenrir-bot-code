@@ -78,13 +78,9 @@ class CorPremiumModal(discord.ui.Modal, title="🎨 Escolha sua Cor Premium"):
     async def on_submit(self, interaction: discord.Interaction):
         try:
             opcao = int(self.cor_select.value.strip())
-            _DEFAULT_PREMIUM_IDS = [
-                1428400034952515696, 1428400132272951358,
-                1428399718945390764, 1428399137057013783,
-            ]
             _cfg = getattr(interaction.client, "config", None)
             _raw = (_cfg.get("premium_color_role_ids") if _cfg else None)
-            _premium_ids = _raw if isinstance(_raw, list) and _raw else _DEFAULT_PREMIUM_IDS
+            _premium_ids = _raw if isinstance(_raw, list) and _raw else []
             _nomes = [
                 ("🌌・Eco de Baldur", discord.Color(0xfff4d6)),
                 ("🌫️・Bruma de Jotunheim", discord.Color(0x87afc7)),
@@ -558,8 +554,8 @@ class CompraCog(commands.Cog):
     async def processar_portao_alcateia(self, interaction: discord.Interaction, user_id: int, item_nome: str, item_id: int):
         try:
             _cfg = getattr(self.bot, "config", None)
-            _special = (_cfg.get("special_access_role_ids") or []) if _cfg else [1428715049928757318]
-            cargo_portao_id = _special[0] if _special else 1428715049928757318
+            _special = (_cfg.get("special_access_role_ids") or []) if _cfg else []
+            cargo_portao_id = _special[0] if _special else None
             guild = interaction.guild
             member = guild.get_member(user_id)
             cargo = guild.get_role(cargo_portao_id)

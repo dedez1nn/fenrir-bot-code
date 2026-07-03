@@ -396,7 +396,7 @@ class AventuraCog(commands.Cog):
             await interaction.response.send_message(embed=embed)
 
             _cfg = getattr(self.aventura_cog.bot, "config", None)
-            _log_id = (_cfg.get("adventure_log_channel_id") if _cfg else None) or 1428872885216481432
+            _log_id = _cfg.get("adventure_log_channel_id") if _cfg else None
             canal_log = self.aventura_cog.bot.get_channel(_log_id)
             if canal_log:
                 if vitoria:
@@ -469,7 +469,7 @@ class AventuraCog(commands.Cog):
             await interaction.response.send_message(embed=embed)
 
             _cfg = getattr(self.aventura_cog.bot, "config", None)
-            _log_id = (_cfg.get("adventure_log_channel_id") if _cfg else None) or 1428872885216481432
+            _log_id = _cfg.get("adventure_log_channel_id") if _cfg else None
             canal_log = self.aventura_cog.bot.get_channel(_log_id)
             if canal_log:
                 embed_log = discord.Embed(
@@ -543,7 +543,7 @@ class AventuraCog(commands.Cog):
             await interaction.response.send_message(embed=embed)
 
             _cfg = getattr(self.aventura_cog.bot, "config", None)
-            _log_id = (_cfg.get("adventure_log_channel_id") if _cfg else None) or 1428872885216481432
+            _log_id = _cfg.get("adventure_log_channel_id") if _cfg else None
             canal_log = self.aventura_cog.bot.get_channel(_log_id)
             if canal_log:
                 embed_log = discord.Embed(

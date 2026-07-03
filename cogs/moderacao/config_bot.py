@@ -838,6 +838,8 @@ class ConfigBotCog(commands.Cog):
         coins_log="Canal de log de coins",
         xp_log="Canal de log de XP",
         levelup="Canal de anúncios de level up",
+        premium_categoria="Categoria onde os canais de pagamento Pix são criados",
+        premium_log="Canal de log de expiração de premium",
     )
     async def config_canais_sistemas(
         self,
@@ -848,6 +850,8 @@ class ConfigBotCog(commands.Cog):
         coins_log: discord.TextChannel = None,
         xp_log: discord.TextChannel = None,
         levelup: discord.TextChannel = None,
+        premium_categoria: discord.CategoryChannel = None,
+        premium_log: discord.TextChannel = None,
     ):
         """Persiste os canais que hoje dependem de IDs padrão hardcoded."""
         if not interaction.user.guild_permissions.administrator:
@@ -873,6 +877,10 @@ class ConfigBotCog(commands.Cog):
             fields["xp_log_channel_id"] = xp_log.id
         if levelup:
             fields["levelup_channel_id"] = levelup.id
+        if premium_categoria:
+            fields["premium_payment_category_id"] = premium_categoria.id
+        if premium_log:
+            fields["premium_log_channel_id"] = premium_log.id
 
         if not fields:
             await interaction.followup.send("⚠️ Nenhum canal foi especificado.", ephemeral=True)
@@ -901,6 +909,10 @@ class ConfigBotCog(commands.Cog):
             embed.add_field(name="⭐ XP Log", value=xp_log.mention, inline=True)
         if levelup:
             embed.add_field(name="📈 Level Up", value=levelup.mention, inline=True)
+        if premium_categoria:
+            embed.add_field(name="💳 Categoria Pix", value=premium_categoria.mention, inline=True)
+        if premium_log:
+            embed.add_field(name="💎 Premium Log", value=premium_log.mention, inline=True)
 
         await interaction.followup.send(embed=embed, ephemeral=True)
 

@@ -173,19 +173,16 @@ class VoiceControlView(discord.ui.View):
             await interaction.response.send_message("✅ Sala excluída.", ephemeral=True)
 
 
-_DEFAULT_VOICE_CREATOR_CH = 1429479982014660712
-
-
 class VoiceCreator(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.main_channel_id = _DEFAULT_VOICE_CREATOR_CH
+        self.main_channel_id = None
         self.feature_enabled: bool = True
         self.channel_name_prefix: str = "🔊 Sala de"
 
     async def cog_load(self) -> None:
         cfg = getattr(self.bot, "config", None)
-        self.main_channel_id = (cfg.get("voice_creator_channel_id") if cfg else None) or _DEFAULT_VOICE_CREATOR_CH
+        self.main_channel_id = cfg.get("voice_creator_channel_id") if cfg else None
         if self.bot.db is not None:
             guild_id = (cfg.get("guild_id") if cfg else None)
             if guild_id:
@@ -227,7 +224,7 @@ class VoiceCreator(commands.Cog):
     async def on_voice_state_update(self, member, before, after):
         if not self.feature_enabled:
             return
-        if after.channel and after.channel.id == self.main_channel_id:
+        if after.channel and self.main_channel_id and after.channel.id == self.main_channel_id:
             guild = member.guild
             category = after.channel.category
 

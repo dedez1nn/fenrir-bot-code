@@ -775,7 +775,7 @@ class ConfirmacaoAliancaView(discord.ui.View):
     async def notificar_aliados_atacante(self, raid_data: dict):
         try:
             _cfg = getattr(self.guild_system.bot, "config", None)
-            canal_aliancas_id = (_cfg.get("guild_raid_channel_id") if _cfg else None) or _DEFAULT_CANAL_RAIDS_ID
+            canal_aliancas_id = _cfg.get("guild_raid_channel_id") if _cfg else None
             canal = self.guild_system.bot.get_channel(canal_aliancas_id)
             
             if not canal:
@@ -876,7 +876,7 @@ class ConfirmacaoDefensorAliancaView(discord.ui.View):
     async def notificar_aliados_defensor(self, raid_data: dict):
         try:
             _cfg = getattr(self.guild_system.bot, "config", None)
-            canal_aliancas_id = (_cfg.get("guild_raid_channel_id") if _cfg else None) or _DEFAULT_CANAL_RAIDS_ID
+            canal_aliancas_id = _cfg.get("guild_raid_channel_id") if _cfg else None
             canal = self.guild_system.bot.get_channel(canal_aliancas_id)
             
             if not canal:
@@ -917,8 +917,6 @@ class ConfirmacaoDefensorAliancaView(discord.ui.View):
         except Exception as e:
             print(f"❌ Erro ao notificar aliados defensor: {e}")
 
-_DEFAULT_CANAL_RAIDS_ID = 1430607187193102456
-
 
 class GuildAllianceRaidSystem(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -937,9 +935,9 @@ class GuildAllianceRaidSystem(commands.Cog):
         return True
 
     @property
-    def CANAL_RAIDS_ID(self) -> int:
+    def CANAL_RAIDS_ID(self) -> int | None:
         cfg = getattr(self.bot, "config", None)
-        return (cfg.get("guild_raid_channel_id") if cfg else None) or _DEFAULT_CANAL_RAIDS_ID
+        return cfg.get("guild_raid_channel_id") if cfg else None
 
     async def cog_load(self) -> None:
         self.use_db = self.bot.db is not None

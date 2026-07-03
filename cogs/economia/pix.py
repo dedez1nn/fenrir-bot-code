@@ -261,7 +261,9 @@ class PixCog(commands.Cog):
 
     async def criar_canal_pagamento(self, interaction: discord.Interaction, plano: str):
         guild = interaction.guild
-        categoria = guild.get_channel(1430229807450558504)
+        categoria = guild.get_channel(
+            self.bot.config.get("premium_payment_category_id") if self.bot.config else None
+        )
         
         if not categoria:
             await interaction.response.send_message("❌ Categoria não encontrada.", ephemeral=True)
