@@ -146,7 +146,7 @@ class TicketCog(commands.Cog):
         """Retorna lista de erros de configuração. Lista vazia = config válida."""
         from db.validators import validate_tickets
         cfg = getattr(self.bot, "config", None)
-        return validate_tickets(dict(cfg) if cfg else {})
+        return validate_tickets(cfg.to_dict() if cfg else {})
 
     async def ticket(self, canal: discord.TextChannel, force: bool = False):
         try:

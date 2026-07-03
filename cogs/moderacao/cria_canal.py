@@ -201,7 +201,7 @@ class VoiceCreator(commands.Cog):
     async def validate_feature_config(self) -> list:
         from db.validators import validate_voice_creator
         cfg = getattr(self.bot, "config", None)
-        return validate_voice_creator(dict(cfg) if cfg else {})
+        return validate_voice_creator(cfg.to_dict() if cfg else {})
 
     def cog_unload(self):
         if hasattr(self, 'cleanup_loop'):
