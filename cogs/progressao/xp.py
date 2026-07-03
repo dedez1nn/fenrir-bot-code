@@ -1,6 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
+from typing import Literal
 import json
 import os
 import time
@@ -1197,17 +1198,10 @@ class XPCog(commands.Cog):
             except:
                 pass
 
-    @app_commands.command(name="set_titulo", description="Configurar título personalizado (ADM)")
-    @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.describe(
-        membro="Membro para configurar título",
-        titulo="Título personalizado"
-    )
-    async def set_titulo(self, interaction: discord.Interaction, membro: discord.Member, titulo: str):
+    @commands.command(name="set_titulo")
+    @commands.has_permissions(administrator=True)
+    async def set_titulo(self, ctx: commands.Context, membro: discord.Member, *, titulo: str):
         try:
-            if await self.bot.guard_channel(interaction):
-                return
-
             user_id_str = str(membro.id)
 
             if user_id_str not in self.user_data:
@@ -1229,36 +1223,24 @@ class XPCog(commands.Cog):
             else:
                 self.salvar_dados()
 
-            await interaction.response.send_message(
+            await ctx.send(
                 f"✅ **Título configurado!**\n"
-                f"**{membro.mention}** agora tem o título: **{titulo}**",
-                ephemeral=True
+                f"**{membro.mention}** agora tem o título: **{titulo}**"
             )
 
         except Exception as e:
             print(f"Erro no comando set_titulo: {e}")
-            await interaction.response.send_message(
-                "❌ Ocorreu um erro ao processar o comando.",
-                ephemeral=True
-            )
+            await ctx.send("❌ Ocorreu um erro ao processar o comando.")
 
-    @app_commands.command(name="set_premium", description="Configurar plano premium para um membro (ADM)")
-    @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.describe(
-        membro="Membro para configurar premium",
-        plano="Plano premium (aventureiro, lendario, mitico)"
-    )
-    @app_commands.choices(plano=[
-        app_commands.Choice(name="Aventureiro (2x XP/coins)", value="aventureiro"),
-        app_commands.Choice(name="Lendário (4x XP/coins)", value="lendario"),
-        app_commands.Choice(name="Mítico (6x XP/coins)", value="mitico"),
-        app_commands.Choice(name="Remover Premium", value="none")
-    ])
-    async def set_premium(self, interaction: discord.Interaction, membro: discord.Member, plano: str):
+    @commands.command(name="set_premium")
+    @commands.has_permissions(administrator=True)
+    async def set_premium(
+        self,
+        ctx: commands.Context,
+        membro: discord.Member,
+        plano: Literal["aventureiro", "lendario", "mitico", "none"],
+    ):
         try:
-            if await self.bot.guard_channel(interaction):
-                return
-
             user_id_str = str(membro.id)
             premium_valor = None if plano == "none" else plano
 
@@ -1282,41 +1264,33 @@ class XPCog(commands.Cog):
                 self.salvar_dados()
 
             if plano == "none":
-                await interaction.response.send_message(
+                await ctx.send(
                     f"✅ **Premium removido!**\n"
-                    f"**{membro.mention}** não tem mais um plano premium.",
-                    ephemeral=True
+                    f"**{membro.mention}** não tem mais um plano premium."
                 )
             else:
                 multiplicador_xp, multiplicador_coins = self.calcular_multiplicador_premium(membro.id)
-                await interaction.response.send_message(
+                await ctx.send(
                     f"✅ **Plano premium configurado!**\n"
                     f"**{membro.mention}** agora tem o plano **{plano.title()}**\n"
-                    f"**Multiplicadores:** {multiplicador_xp}x XP / {multiplicador_coins}x coins",
-                    ephemeral=True
+                    f"**Multiplicadores:** {multiplicador_xp}x XP / {multiplicador_coins}x coins"
                 )
 
         except Exception as e:
             print(f"Erro no comando set_premium: {e}")
-            await interaction.response.send_message(
-                "❌ Ocorreu um erro ao processar o comando.",
-                ephemeral=True
-            )
+            await ctx.send("❌ Ocorreu um erro ao processar o comando.")
 
-    @app_commands.command(name="reset-xp-all", description="Zerar o XP de TODOS os membros (ADM)")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def reset_xp_all(self, interaction: discord.Interaction):
+    @commands.command(name="reset-xp-all")
+    @commands.has_permissions(administrator=True)
+    async def reset_xp_all(self, ctx: commands.Context):
         try:
-            if await self.bot.guard_channel(interaction):
-                return
-
             for user_id, dados in self.user_data.items():
                 try:
-                    membro = interaction.guild.get_member(int(user_id))
+                    membro = ctx.guild.get_member(int(user_id))
                     if membro:
                         for nivel_requerido, cargo_id in self.cargos_por_nivel.items():
                             if dados["nivel"] >= nivel_requerido:
-                                cargo = interaction.guild.get_role(cargo_id)
+                                cargo = ctx.guild.get_role(cargo_id)
                                 if cargo and cargo in membro.roles:
                                     await membro.remove_roles(cargo, reason="Reset total de XP")
                 except Exception as e:
@@ -1333,31 +1307,27 @@ class XPCog(commands.Cog):
             canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
             embed_log = discord.Embed(
                 title="🔔 Remoção de Experiência Geral",
-                description=f"\n\nO Administrador {interaction.user.mention} zerou o XP de todos!\n"
+                description=f"\n\nO Administrador {ctx.author.mention} zerou o XP de todos!\n"
                              f"Todo o banco de dados de XP foi limpo.",
                 color=discord.Color.dark_red(),
                 timestamp=discord.utils.utcnow()
             )
-            embed_log.set_thumbnail(url=interaction.user.display_avatar.url)
-            embed_log.set_footer(text=interaction.user.id)
+            embed_log.set_thumbnail(url=ctx.author.display_avatar.url)
+            embed_log.set_footer(text=ctx.author.id)
             await canal_log.send(embed=embed_log)
 
-            await interaction.response.send_message(
+            await ctx.send(
                 "✅ XP de **TODOS** os membros foi zerado!\n"
-                "Todos os cargos do sistema de XP foram removidos.",
-                ephemeral=True
+                "Todos os cargos do sistema de XP foram removidos."
             )
 
         except Exception as e:
             print(f"Erro no comando reset-xp-all: {e}")
-            await interaction.response.send_message(
-                "❌ Ocorreu um erro ao processar o comando.",
-                ephemeral=True
-            )
+            await ctx.send("❌ Ocorreu um erro ao processar o comando.")
 
-    @app_commands.command(name="reset-xp", description="Zerar o XP do membro selecionado (ADM)")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def reset_xp(self, interaction: discord.Interaction, membro: discord.Member):
+    @commands.command(name="reset-xp")
+    @commands.has_permissions(administrator=True)
+    async def reset_xp(self, ctx: commands.Context, membro: discord.Member):
         try:
             user_id = str(membro.id)
             if user_id in self.user_data:
@@ -1373,55 +1343,45 @@ class XPCog(commands.Cog):
                 else:
                     self.salvar_dados()
 
-                await interaction.response.send_message(f"✅ XP de {membro.mention} foi zerado!", ephemeral=True)
+                await ctx.send(f"✅ XP de {membro.mention} foi zerado!")
 
                 for nivel_requerido, cargo_id in self.cargos_por_nivel.items():
                     if nivel_antes >= nivel_requerido:
-                        cargo = interaction.guild.get_role(cargo_id)
+                        cargo = ctx.guild.get_role(cargo_id)
                         if cargo and cargo in membro.roles:
                             await membro.remove_roles(cargo, reason="Reset de XP")
 
                 canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
                 embed_log = discord.Embed(
                     title="🔔 Remoção de Experiência",
-                    description=f"\n\nO Administrador {interaction.user.mention}\n"
+                    description=f"\n\nO Administrador {ctx.author.mention}\n"
                                 f"**resetou** todo o XP de {membro.mention}**\n",
                     color=discord.Color.dark_red(),
                     timestamp=discord.utils.utcnow()
                 )
-                embed_log.set_thumbnail(url=interaction.user.display_avatar.url)
-                embed_log.set_footer(text=interaction.user.id)
+                embed_log.set_thumbnail(url=ctx.author.display_avatar.url)
+                embed_log.set_footer(text=ctx.author.id)
                 await canal_log.send(embed=embed_log)
 
             else:
-                await interaction.response.send_message(f"{membro.mention} não possui XP registrado.", ephemeral=True)
+                await ctx.send(f"{membro.mention} não possui XP registrado.")
 
         except Exception as e:
             print(f"Erro no comando reset-xp: {e}")
-            await interaction.response.send_message(
-                "❌ Ocorreu um erro ao processar o comando.",
-                ephemeral=True
-            )
+            await ctx.send("❌ Ocorreu um erro ao processar o comando.")
 
-    @app_commands.command(name="retirar-xp", description="Remover XP de um membro (ADM)")
-    @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.describe(
-        membro="Membro que terá XP removido",
-        quantidade="Quantidade de XP a remover"
-    )
-    async def retirar_xp(self, interaction: discord.Interaction, membro: discord.Member, quantidade: int):
+    @commands.command(name="retirar-xp")
+    @commands.has_permissions(administrator=True)
+    async def retirar_xp(self, ctx: commands.Context, membro: discord.Member, quantidade: int):
         try:
-            if await self.bot.guard_channel(interaction):
-                return
-
             user_id = str(membro.id)
 
             if user_id not in self.user_data:
-                await interaction.response.send_message(f"{membro.mention} não possui XP registrado.", ephemeral=True)
+                await ctx.send(f"{membro.mention} não possui XP registrado.")
                 return
 
             if quantidade <= 0:
-                await interaction.response.send_message("A quantidade deve ser maior que 0.", ephemeral=True)
+                await ctx.send("A quantidade deve ser maior que 0.")
                 return
 
             dados = self.user_data[user_id]
@@ -1437,46 +1397,38 @@ class XPCog(commands.Cog):
                 dados["xp"] = 0
 
             if dados["nivel"] != nivel_anterior:
-                await self.atualizar_cargos(membro, dados["nivel"], interaction.channel)
+                await self.atualizar_cargos(membro, dados["nivel"], ctx.channel)
 
             await self._persistir_xp(user_id, dados)
 
             canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
             embed_log = discord.Embed(
                 title="🔔 Remoção de Experiência",
-                description=f"\n\nO Administrador {interaction.user.mention}\n"
+                description=f"\n\nO Administrador {ctx.author.mention}\n"
                              f"retirou **{quantidade} de XP de {membro.mention}**\n"
                              f"Novo XP de {membro.name}: **{dados['xp']}**",
                 color=discord.Color.dark_red(),
                 timestamp=discord.utils.utcnow()
             )
-            embed_log.set_thumbnail(url=interaction.user.display_avatar.url)
-            embed_log.set_footer(text=interaction.user.id)
+            embed_log.set_thumbnail(url=ctx.author.display_avatar.url)
+            embed_log.set_footer(text=ctx.author.id)
             await canal_log.send(embed=embed_log)
 
-            await interaction.response.send_message(
+            await ctx.send(
                 f"✅ XP removido com sucesso!\n"
-                f"{membro.mention} agora está no **nível {dados['nivel']}** com **{dados['xp']} XP**.",
-                ephemeral=True
+                f"{membro.mention} agora está no **nível {dados['nivel']}** com **{dados['xp']} XP**."
             )
 
         except Exception as e:
             print(f"Erro no comando retirar-xp: {e}")
-            await interaction.response.send_message(
-                "❌ Ocorreu um erro ao processar o comando.",
-                ephemeral=True
-            )
+            await ctx.send("❌ Ocorreu um erro ao processar o comando.")
 
-    @app_commands.command(name="adicionar-xp", description="Adicionar XP a um membro (ADM)")
-    @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.describe(
-        membro="Membro que terá XP adicionado",
-        quantidade="Quantidade de XP a adicionar"
-    )
-    async def adicionar_xp_adm(self, interaction: discord.Interaction, membro: discord.Member, quantidade: int):
+    @commands.command(name="adicionar-xp")
+    @commands.has_permissions(administrator=True)
+    async def adicionar_xp_adm(self, ctx: commands.Context, membro: discord.Member, quantidade: int):
         try:
             if quantidade <= 0:
-                await interaction.response.send_message("❌ A quantidade deve ser maior que 0.", ephemeral=True)
+                await ctx.send("❌ A quantidade deve ser maior que 0.")
                 return
 
             user_id = str(membro.id)
@@ -1486,18 +1438,17 @@ class XPCog(commands.Cog):
 
             await self.adicionar_xp_sem_multiplo(membro.id, quantidade, "Adição manual por ADM")
 
-            await interaction.response.send_message(
+            await ctx.send(
                 f"✅ **{quantidade} XP** adicionados a {membro.mention}!\n"
                 f"**Nível:** {nivel_antes} → {dados['nivel']}\n"
-                f"**XP:** {xp_antes} → {dados['xp']}",
-                ephemeral=True
+                f"**XP:** {xp_antes} → {dados['xp']}"
             )
 
             canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
             if canal_log:
                 embed_log = discord.Embed(
                     title="🔔 XP Adicionado por ADM",
-                    description=f"**{interaction.user.mention}** adicionou **{quantidade} XP** a {membro.mention}",
+                    description=f"**{ctx.author.mention}** adicionou **{quantidade} XP** a {membro.mention}",
                     color=discord.Color.green(),
                     timestamp=discord.utils.utcnow()
                 )
@@ -1506,40 +1457,29 @@ class XPCog(commands.Cog):
 
         except Exception as e:
             print(f"Erro no comando adicionar-xp: {e}")
-            await interaction.response.send_message("❌ Ocorreu um erro ao processar o comando.", ephemeral=True)
+            await ctx.send("❌ Ocorreu um erro ao processar o comando.")
 
-    @app_commands.command(name="config_voz", description="Configurar XP por tempo em voz (ADM)")
-    @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.describe(
-        intervalo="Intervalo em minutos para ganhar XP",
-        xp_quantidade="Quantidade de XP a ganhar"
-    )
-    async def config_voz(self, interaction: discord.Interaction, intervalo: int, xp_quantidade: int):
+    @commands.command(name="config_voz")
+    @commands.has_permissions(administrator=True)
+    async def config_voz(self, ctx: commands.Context, intervalo: int, xp_quantidade: int):
         try:
-            if await self.bot.guard_channel(interaction):
-                return
-
             if intervalo < 1 or xp_quantidade < 1:
-                await interaction.response.send_message("❌ Intervalo e XP devem ser maiores que 0.", ephemeral=True)
+                await ctx.send("❌ Intervalo e XP devem ser maiores que 0.")
                 return
 
             self.voice_xp_interval = intervalo * 60
             self.voice_xp_amount = xp_quantidade
 
-            await interaction.response.send_message(
+            await ctx.send(
                 f"✅ **Configuração de XP por voz atualizada!**\n"
                 f"**Intervalo:** {intervalo} minutos\n"
                 f"**XP ganho:** {xp_quantidade} pontos\n"
-                f"**Usuários ativos em voz:** {len(self.voice_users)}",
-                ephemeral=True
+                f"**Usuários ativos em voz:** {len(self.voice_users)}"
             )
 
         except Exception as e:
             print(f"Erro no comando config_voz: {e}")
-            await interaction.response.send_message(
-                "❌ Ocorreu um erro ao processar o comando.",
-                ephemeral=True
-            )
+            await ctx.send("❌ Ocorreu um erro ao processar o comando.")
 
     @app_commands.command(name="status_voz", description="Mostra status do sistema de voz")
     async def status_voz(self, interaction: discord.Interaction):

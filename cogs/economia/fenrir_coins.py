@@ -667,15 +667,11 @@ class FenrirCoins(commands.Cog):
         sent_message = await interaction.original_response()
         view.message = sent_message
 
-    @app_commands.command(name="adicionar_coins", description="Adicionar coins a um usuário (ADM)")
-    @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.describe(
-        membro="Usuário para adicionar coins",
-        quantidade="Quantidade de coins"
-    )
-    async def adicionar_coins_adm(self, interaction: discord.Interaction, membro: discord.Member, quantidade: int):
+    @commands.command(name="adicionar_coins")
+    @commands.has_permissions(administrator=True)
+    async def adicionar_coins_adm(self, ctx: commands.Context, membro: discord.Member, quantidade: int):
         if quantidade <= 0:
-            await interaction.response.send_message("❌ Quantidade deve ser maior que 0!", ephemeral=True)
+            await ctx.send("❌ Quantidade deve ser maior que 0!")
             return
 
         dados = self.obter_dados_usuario(membro.id)
@@ -703,9 +699,9 @@ class FenrirCoins(commands.Cog):
         embed.add_field(name="Saldo anterior", value=f"`{saldo_anterior} coins`", inline=True)
         embed.add_field(name="Saldo atual", value=f"`{dados['coins']} coins`", inline=True)
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
         await self.enviar_log(
-            interaction.user.id,
+            ctx.author.id,
             "Admin - Coins Adicionadas",
             f"**Ação:** Adicionou {quantidade} coins para {membro.mention}\n"
             f"**Saldo anterior:** {saldo_anterior} coins\n"
@@ -713,25 +709,18 @@ class FenrirCoins(commands.Cog):
             discord.Color.gold()
         )
 
-    @app_commands.command(name="remover_coins", description="Remover coins de um usuário (ADM)")
-    @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.describe(
-        membro="Usuário para remover coins",
-        quantidade="Quantidade de coins"
-    )
-    async def remover_coins_adm(self, interaction: discord.Interaction, membro: discord.Member, quantidade: int):
+    @commands.command(name="remover_coins")
+    @commands.has_permissions(administrator=True)
+    async def remover_coins_adm(self, ctx: commands.Context, membro: discord.Member, quantidade: int):
         if quantidade <= 0:
-            await interaction.response.send_message("❌ Quantidade deve ser maior que 0!", ephemeral=True)
+            await ctx.send("❌ Quantidade deve ser maior que 0!")
             return
 
         dados = self.obter_dados_usuario(membro.id)
         saldo_anterior = dados["coins"]
 
         if dados["coins"] < quantidade:
-            await interaction.response.send_message(
-                f"❌ Saldo insuficiente! {membro.mention} tem apenas {dados['coins']} coins",
-                ephemeral=True
-            )
+            await ctx.send(f"❌ Saldo insuficiente! {membro.mention} tem apenas {dados['coins']} coins")
             return
 
         if self.use_db:
@@ -753,24 +742,15 @@ class FenrirCoins(commands.Cog):
         embed.add_field(name="Saldo anterior", value=f"`{saldo_anterior} coins`", inline=True)
         embed.add_field(name="Saldo atual", value=f"`{dados['coins']} coins`", inline=True)
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
         await self.enviar_log(
-            interaction.user.id,
+            ctx.author.id,
             "Admin - Coins Removidas",
             f"**Ação:** Removeu {quantidade} coins de {membro.mention}\n"
             f"**Saldo anterior:** {saldo_anterior} coins\n"
             f"**Saldo atual:** {dados['coins']} coins",
             discord.Color.orange()
         )
-
-    @adicionar_coins_adm.error
-    @remover_coins_adm.error
-    async def comandos_adm_error(self, interaction: discord.Interaction, error):
-        if isinstance(error, app_commands.MissingPermissions):
-            await interaction.response.send_message(
-                "❌ Você não tem permissão de administrador para usar este comando.",
-                ephemeral=True
-            )
 
 
 async def setup(bot: commands.Bot):

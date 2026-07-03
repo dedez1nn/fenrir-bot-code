@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from typing import Literal
+
 import discord
-from discord import app_commands
 from discord.ext import commands
 
 from .config import AntinukeConfig
@@ -252,15 +253,10 @@ class AntiNuke(commands.Cog):
     # Slash commands
     # ------------------------------------------------------------------ #
 
-    antinuke_group = app_commands.Group(
-        name="antinuke",
-        description="Configuração do sistema anti-nuke",
-        default_permissions=discord.Permissions(administrator=True),
-    )
-
-    @antinuke_group.command(name="status", description="Mostra configuração e severidade atual")
-    async def cmd_status(self, interaction: discord.Interaction) -> None:
-        guild = interaction.guild
+    @commands.command(name="antinuke_status")
+    @commands.has_permissions(administrator=True)
+    async def cmd_status(self, ctx: commands.Context) -> None:
+        guild = ctx.guild
         sev = self.severity.current(guild.id)
         locked = self.lockdown.is_locked(guild.id)
 
@@ -292,107 +288,91 @@ class AntiNuke(commands.Cog):
             value=f"`{len(self.config.whitelist_ids)}` usuários",
             inline=True,
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
-    @antinuke_group.command(name="modo", description="Alterna entre alert-only e modo ativo")
-    @app_commands.choices(modo=[
-        app_commands.Choice(name="alert-only (apenas loga, não age)", value="alert"),
-        app_commands.Choice(name="ativo (age automaticamente)", value="active"),
-    ])
-    async def cmd_modo(self, interaction: discord.Interaction, modo: app_commands.Choice[str]) -> None:
-        self.config.alert_only = modo.value == "alert"
+    @commands.command(name="antinuke_modo")
+    @commands.has_permissions(administrator=True)
+    async def cmd_modo(self, ctx: commands.Context, modo: Literal["alert", "active"]) -> None:
+        self.config.alert_only = modo == "alert"
         label = "alert-only" if self.config.alert_only else "ativo"
-        await interaction.response.send_message(f"✅ Modo definido para `{label}`.", ephemeral=True)
+        await ctx.send(f"✅ Modo definido para `{label}`.")
 
-    @antinuke_group.command(name="whitelist", description="Adiciona ou remove usuário da whitelist do antinuke")
-    @app_commands.choices(action=[
-        app_commands.Choice(name="add", value="add"),
-        app_commands.Choice(name="remove", value="remove"),
-    ])
+    @commands.command(name="antinuke_whitelist")
+    @commands.has_permissions(administrator=True)
     async def cmd_whitelist(
         self,
-        interaction: discord.Interaction,
+        ctx: commands.Context,
         user: discord.Member,
-        action: app_commands.Choice[str],
+        action: Literal["add", "remove"],
     ) -> None:
-        if action.value == "add":
+        if action == "add":
             if user.id not in self.config.whitelist_ids:
                 self.config.whitelist_ids.append(user.id)
             msg = f"✅ {user.mention} adicionado à whitelist do antinuke."
         else:
             self.config.whitelist_ids = [i for i in self.config.whitelist_ids if i != user.id]
             msg = f"✅ {user.mention} removido da whitelist do antinuke."
-        await interaction.response.send_message(msg, ephemeral=True)
+        await ctx.send(msg)
 
-    @antinuke_group.command(name="ping_admin", description="Adiciona ou remove admin para pings de alerta")
-    @app_commands.choices(action=[
-        app_commands.Choice(name="add", value="add"),
-        app_commands.Choice(name="remove", value="remove"),
-    ])
+    @commands.command(name="antinuke_ping_admin")
+    @commands.has_permissions(administrator=True)
     async def cmd_ping_admin(
         self,
-        interaction: discord.Interaction,
+        ctx: commands.Context,
         user: discord.Member,
-        action: app_commands.Choice[str],
+        action: Literal["add", "remove"],
     ) -> None:
-        if action.value == "add":
+        if action == "add":
             if user.id not in self.config.admin_ping_ids:
                 self.config.admin_ping_ids.append(user.id)
             msg = f"✅ {user.mention} será pingado em alertas de severidade 2+."
         else:
             self.config.admin_ping_ids = [i for i in self.config.admin_ping_ids if i != user.id]
             msg = f"✅ {user.mention} removido dos pings de alerta."
-        await interaction.response.send_message(msg, ephemeral=True)
+        await ctx.send(msg)
 
-    @antinuke_group.command(name="canal_log", description="Define o canal de logs do antinuke")
-    async def cmd_canal_log(self, interaction: discord.Interaction, canal: discord.TextChannel) -> None:
+    @commands.command(name="antinuke_canal_log")
+    @commands.has_permissions(administrator=True)
+    async def cmd_canal_log(self, ctx: commands.Context, canal: discord.TextChannel) -> None:
         self.config.log_channel_id = canal.id
-        await interaction.response.send_message(f"✅ Canal de log definido: {canal.mention}", ephemeral=True)
+        await ctx.send(f"✅ Canal de log definido: {canal.mention}")
 
-    @antinuke_group.command(name="lockdown", description="Ativa lockdown manual imediatamente")
-    @app_commands.describe(motivo="Motivo do lockdown")
-    async def cmd_lockdown(self, interaction: discord.Interaction, motivo: str = "Manual") -> None:
-        await interaction.response.defer(ephemeral=True)
+    @commands.command(name="antinuke_lockdown")
+    @commands.has_permissions(administrator=True)
+    async def cmd_lockdown(self, ctx: commands.Context, *, motivo: str = "Manual") -> None:
         ok = await self.lockdown.lockdown(
-            interaction.guild,
+            ctx.guild,
             reason=motivo,
             duration_minutes=self.config.lockdown_duration_minutes,
             log_channel_id=self.config.log_channel_id,
         )
         if ok:
-            await interaction.followup.send(
-                f"🔒 Lockdown ativado por **{self.config.lockdown_duration_minutes} min**.", ephemeral=True
-            )
+            await ctx.send(f"🔒 Lockdown ativado por **{self.config.lockdown_duration_minutes} min**.")
         else:
-            await interaction.followup.send("⚠️ Servidor já está em lockdown.", ephemeral=True)
+            await ctx.send("⚠️ Servidor já está em lockdown.")
 
-    @antinuke_group.command(name="unlock", description="Remove o lockdown manualmente")
-    async def cmd_unlock(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
+    @commands.command(name="antinuke_unlock")
+    @commands.has_permissions(administrator=True)
+    async def cmd_unlock(self, ctx: commands.Context) -> None:
         ok = await self.lockdown.unlock(
-            interaction.guild,
-            reason=f"Unlock manual por {interaction.user}",
+            ctx.guild,
+            reason=f"Unlock manual por {ctx.author}",
             log_channel_id=self.config.log_channel_id,
         )
         if ok:
-            await interaction.followup.send("🔓 Lockdown removido.", ephemeral=True)
+            await ctx.send("🔓 Lockdown removido.")
         else:
-            await interaction.followup.send("ℹ️ Servidor não estava em lockdown.", ephemeral=True)
+            await ctx.send("ℹ️ Servidor não estava em lockdown.")
 
-    @antinuke_group.command(name="reset_severidade", description="Zera o contador de severidade do servidor")
-    async def cmd_reset_sev(self, interaction: discord.Interaction) -> None:
-        self.severity.reset(interaction.guild.id)
-        await interaction.response.send_message("✅ Severidade zerada.", ephemeral=True)
+    @commands.command(name="antinuke_reset_severidade")
+    @commands.has_permissions(administrator=True)
+    async def cmd_reset_sev(self, ctx: commands.Context) -> None:
+        self.severity.reset(ctx.guild.id)
+        await ctx.send("✅ Severidade zerada.")
 
-    @antinuke_group.command(name="toggle", description="Liga ou desliga o sistema anti-nuke")
-    @app_commands.describe(estado="on para ativar, off para desativar")
-    @app_commands.choices(estado=[
-        app_commands.Choice(name="on — ativar", value="on"),
-        app_commands.Choice(name="off — desativar", value="off"),
-    ])
-    async def cmd_toggle(self, interaction: discord.Interaction, estado: app_commands.Choice[str]) -> None:
-        self.config.enabled = estado.value == "on"
+    @commands.command(name="antinuke_toggle")
+    @commands.has_permissions(administrator=True)
+    async def cmd_toggle(self, ctx: commands.Context, estado: Literal["on", "off"]) -> None:
+        self.config.enabled = estado == "on"
         label = "✅ ativado" if self.config.enabled else "⛔ desativado"
-        await interaction.response.send_message(
-            f"🛡️ Anti-Nuke {label}.", ephemeral=True
-        )
+        await ctx.send(f"🛡️ Anti-Nuke {label}.")

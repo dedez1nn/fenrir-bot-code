@@ -1,11 +1,10 @@
-"""Slash command /config_status — diagnóstico de configuração para admins.
+"""Comando !config_status — diagnóstico de configuração para admins.
 
 Mostra estado de validação de todas as features sem acessar o DB diretamente:
 usa validate_all() contra o bot.config em memória.
 """
 
 import discord
-from discord import app_commands
 from discord.ext import commands
 
 
@@ -13,24 +12,19 @@ class ConfigCheck(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @app_commands.command(
-        name="config_status",
-        description="[Admin] Diagnóstico de configuração — mostra quais features têm erros",
-    )
-    @app_commands.default_permissions(administrator=True)
-    async def config_status(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-
+    @commands.command(name="config_status")
+    @commands.has_permissions(administrator=True)
+    async def config_status(self, ctx: commands.Context):
         cfg = getattr(self.bot, "config", None)
         if cfg is None:
-            await interaction.followup.send("❌ server_config não carregada (bot em modo degradado).", ephemeral=True)
+            await ctx.send("❌ server_config não carregada (bot em modo degradado).")
             return
 
         try:
             from db.validators import validate_all
             all_errors = validate_all(cfg.to_dict())
         except Exception as exc:
-            await interaction.followup.send(f"❌ Erro ao rodar validação: {exc}", ephemeral=True)
+            await ctx.send(f"❌ Erro ao rodar validação: {exc}")
             return
 
         ok_features = [f for f, errs in all_errors.items() if not errs]
@@ -63,7 +57,7 @@ class ConfigCheck(commands.Cog):
         else:
             embed.description = f"{len(bad_features)} feature(s) com configuração incompleta."
 
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
 
 async def setup(bot: commands.Bot):

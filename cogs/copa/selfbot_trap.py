@@ -6,7 +6,6 @@ import time
 from collections import defaultdict, deque
 
 import discord
-from discord import app_commands
 from discord.ext import commands
 
 from services.db import (
@@ -146,22 +145,15 @@ class SelfbotTrapCog(commands.Cog):
 
     # ── Slash commands ────────────────────────────────────────────────────────
 
-    @app_commands.command(
-        name="config-selfbot",
-        description="Configura a armadilha de selfbot (apenas admins)",
-    )
-    @app_commands.describe(
-        canal="Canal armadilha — qualquer mensagem aqui dispara o kick",
-        canal_log="(Opcional) Canal onde o bot registra cada detecção com detalhes",
-    )
-    @app_commands.default_permissions(administrator=True)
+    @commands.command(name="config-selfbot")
+    @commands.has_permissions(administrator=True)
     async def cmd_config_selfbot(
         self,
-        interaction: discord.Interaction,
+        ctx: commands.Context,
         canal: discord.TextChannel,
         canal_log: discord.TextChannel | None = None,
     ) -> None:
-        guild_id = interaction.guild_id
+        guild_id = ctx.guild.id
         await set_selfbot_channel(guild_id, canal.id)
         _trap_channels[guild_id] = canal.id
 
@@ -184,53 +176,45 @@ class SelfbotTrapCog(commands.Cog):
             ),
             inline=False,
         )
-        embed.set_footer(text="Use /selfbot-status para ver a configuração atual")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        embed.set_footer(text="Use !selfbot-status para ver a configuração atual")
+        await ctx.send(embed=embed)
 
-    @app_commands.command(
-        name="selfbot-remover",
-        description="Remove a armadilha de selfbot deste servidor (apenas admins)",
-    )
-    @app_commands.default_permissions(administrator=True)
-    async def cmd_selfbot_remover(self, interaction: discord.Interaction) -> None:
-        guild_id = interaction.guild_id
+    @commands.command(name="selfbot-remover")
+    @commands.has_permissions(administrator=True)
+    async def cmd_selfbot_remover(self, ctx: commands.Context) -> None:
+        guild_id = ctx.guild.id
         await remove_selfbot_channel(guild_id)
         await remove_selfbot_log_channel(guild_id)
         _trap_channels.pop(guild_id, None)
         _log_channels.pop(guild_id, None)
-        await interaction.response.send_message(
-            "✅ Armadilha de selfbot e canal de log removidos.", ephemeral=True
-        )
+        await ctx.send("✅ Armadilha de selfbot e canal de log removidos.")
 
-    @app_commands.command(
-        name="selfbot-status",
-        description="Mostra o status da armadilha de selfbot (apenas admins)",
-    )
-    @app_commands.default_permissions(administrator=True)
-    async def cmd_selfbot_status(self, interaction: discord.Interaction) -> None:
-        guild_id = interaction.guild_id
+    @commands.command(name="selfbot-status")
+    @commands.has_permissions(administrator=True)
+    async def cmd_selfbot_status(self, ctx: commands.Context) -> None:
+        guild_id = ctx.guild.id
         channel_id = _trap_channels.get(guild_id)
         log_channel_id = _log_channels.get(guild_id)
 
         embed = discord.Embed(title="🚨 Status — Armadilha de Selfbot", color=0xFF4444)
         if channel_id:
-            ch = interaction.guild.get_channel(channel_id)
+            ch = ctx.guild.get_channel(channel_id)
             mention = ch.mention if ch else f"<canal removido: {channel_id}>"
             embed.add_field(name="Status", value="🟢 Ativo", inline=True)
             embed.add_field(name="Canal armadilha", value=mention, inline=True)
             embed.add_field(name="Janela de varredura", value=f"{SWEEP_WINDOW}s", inline=True)
 
             if log_channel_id:
-                log_ch = interaction.guild.get_channel(log_channel_id)
+                log_ch = ctx.guild.get_channel(log_channel_id)
                 log_mention = log_ch.mention if log_ch else f"<canal removido: {log_channel_id}>"
                 embed.add_field(name="Canal de log", value=log_mention, inline=True)
             else:
                 embed.add_field(name="Canal de log", value="Canal do sistema (padrão)", inline=True)
         else:
             embed.add_field(name="Status", value="🔴 Inativo", inline=True)
-            embed.description = "Use `/config-selfbot` para configurar."
+            embed.description = "Use `!config-selfbot` para configurar."
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
 
 async def setup(bot: commands.Bot) -> None:

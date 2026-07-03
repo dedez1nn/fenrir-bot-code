@@ -328,27 +328,20 @@ class GuildSystem(commands.Cog):
         except Exception as e:
             print(f"❌ Erro ao atualizar coins do usuário: {e}")
 
-    @app_commands.command(name="guild_adicionar_xp", description="Adiciona XP à guild (apenas desenvolvedor)")
-    @app_commands.describe(quantidade_xp="Quantidade de XP para adicionar", nome_guild="Nome da guild (opcional)")
-    @app_commands.default_permissions(administrator=True)
-    async def guild_add_xp(self, interaction: discord.Interaction, quantidade_xp: int, nome_guild: str = None):
+    @commands.command(name="guild_adicionar_xp")
+    @commands.has_permissions(administrator=True)
+    async def guild_add_xp(self, ctx: commands.Context, quantidade_xp: int, *, nome_guild: str = None):
         try:
-            await interaction.response.defer(ephemeral=True)
-            
-            if not interaction.user.guild_permissions.administrator:
-                await interaction.followup.send("❌ Você precisa ser administrador para usar este comando!")
-                return
-            
             if quantidade_xp <= 0:
-                await interaction.followup.send("❌ A quantidade de XP deve ser maior que 0!")
+                await ctx.send("❌ A quantidade de XP deve ser maior que 0!")
                 return
-            
+
             dados = self.carregar_dados()
             guild_id_encontrada = None
             guild_nome_encontrada = None
 
             if not nome_guild:
-                guild_id_encontrada = self.obter_guild_por_membro(interaction.user.id)
+                guild_id_encontrada = self.obter_guild_por_membro(ctx.author.id)
                 if guild_id_encontrada and guild_id_encontrada in dados:
                     guild_nome_encontrada = dados[guild_id_encontrada]["nome"]
             else:
@@ -359,16 +352,16 @@ class GuildSystem(commands.Cog):
                         guild_id_encontrada = guild_id
                         guild_nome_encontrada = guild_data["nome"]
                         break
-            
+
             if not guild_id_encontrada:
                 if nome_guild:
-                    await interaction.followup.send(f"❌ Guild **{nome_guild}** não encontrada!")
+                    await ctx.send(f"❌ Guild **{nome_guild}** não encontrada!")
                 else:
-                    await interaction.followup.send("❌ Você não está em uma guild e não forneceu um nome de guild!")
+                    await ctx.send("❌ Você não está em uma guild e não forneceu um nome de guild!")
                 return
 
             if guild_id_encontrada not in dados:
-                await interaction.followup.send(f"❌ Guild {guild_id_encontrada} não encontrada!")
+                await ctx.send(f"❌ Guild {guild_id_encontrada} não encontrada!")
                 return
 
             dados[guild_id_encontrada]["xp"] += quantidade_xp
@@ -380,21 +373,21 @@ class GuildSystem(commands.Cog):
                     title="🎯 XP Adicionado!",
                     color=discord.Color.green()
                 )
-                
+
                 xp_atual = dados[guild_id_encontrada]["xp"]
                 nivel_atual = dados[guild_id_encontrada]["nivel"]
                 xp_necessario = self.calcular_xp_necessario(nivel_atual)
-                
+
                 if subiu_nivel:
                     embed.description = f"✅ **{quantidade_xp:,} XP** adicionado à guild **{guild_nome_encontrada}**! 🎉"
-                    
+
                     recompensas_texto = ""
                     for i in range(niveis_subidos):
                         nivel_alcancado = nivel_atual - i
                         recompensa = self.recompensas_nivel.get(nivel_alcancado, {})
                         if recompensa.get("banco", 0) > 0:
                             recompensas_texto += f"**Nível {nivel_alcancado}**: +{recompensa['banco']:,}💰 | {recompensa['vantagens']}\n"
-                    
+
                     if recompensas_texto:
                         embed.add_field(
                             name="🎁 Recompensas Conquistadas!",
@@ -403,7 +396,7 @@ class GuildSystem(commands.Cog):
                         )
                 else:
                     embed.description = f"✅ **{quantidade_xp:,} XP** adicionado à guild **{guild_nome_encontrada}**!"
-                
+
                 embed.add_field(
                     name="🎯 Progresso Atual",
                     value=f"**Nível {nivel_atual}**\nXP: {xp_atual:,}/{xp_necessario:,}",
@@ -422,16 +415,16 @@ class GuildSystem(commands.Cog):
                     value=f"`{barra}` {progresso:.1f}%",
                     inline=False
                 )
-                
-                await interaction.followup.send(embed=embed)
+
+                await ctx.send(embed=embed)
             else:
-                await interaction.followup.send("❌ Erro ao salvar dados da guild!")
-            
+                await ctx.send("❌ Erro ao salvar dados da guild!")
+
         except ValueError:
-            await interaction.followup.send("❌ Por favor, forneça um número válido para o XP.")
+            await ctx.send("❌ Por favor, forneça um número válido para o XP.")
         except Exception as e:
             print(f"❌ Erro em guild_add_xp: {e}")
-            await interaction.followup.send(f"❌ Erro ao adicionar XP: {str(e)}")
+            await ctx.send(f"❌ Erro ao adicionar XP: {str(e)}")
             
     @app_commands.command(name="guild_progresso", description="Mostra a progressão de níveis da guild")
     async def guild_progress(self, interaction: discord.Interaction):
@@ -515,38 +508,36 @@ class GuildSystem(commands.Cog):
             print(f"❌ Erro em guild_progress: {e}")
             await interaction.followup.send("❌ Erro ao mostrar progresso!")
 
-    @app_commands.command(name="guild_listar", description="Lista todas as guilds com seus IDs")
-    @app_commands.default_permissions(administrator=True)
-    async def guild_list(self, interaction: discord.Interaction):
+    @commands.command(name="guild_listar")
+    @commands.has_permissions(administrator=True)
+    async def guild_list(self, ctx: commands.Context):
         try:
-            await interaction.response.defer(ephemeral=True)
-            
             dados = self.carregar_dados()
             guilds_validas = {k: v for k, v in dados.items() if k != "raids_ativas"}
-            
+
             if not guilds_validas:
-                await interaction.followup.send("❌ Nenhuma guild criada ainda!")
+                await ctx.send("❌ Nenhuma guild criada ainda!")
                 return
-            
+
             embed = discord.Embed(
                 title="📋 Lista de Guilds",
                 description="IDs de todas as guilds para uso administrativo:",
                 color=discord.Color.blue()
             )
-            
+
             for guild_id, guild_data in guilds_validas.items():
                 embed.add_field(
                     name=f"🏰 {guild_data['nome']}",
                     value=f"**ID:** `{guild_id}`\n**Líder:** <@{guild_data['lider']}>\n**Nível:** {guild_data['nivel']} | **XP:** {guild_data['xp']:,}",
                     inline=False
                 )
-            
-            embed.set_footer(text="Use /guild_adicionar_xp com estes IDs para adicionar XP")
-            await interaction.followup.send(embed=embed)
-            
+
+            embed.set_footer(text="Use !guild_adicionar_xp com estes IDs para adicionar XP")
+            await ctx.send(embed=embed)
+
         except Exception as e:
             print(f"❌ Erro em guild_list: {e}")
-            await interaction.followup.send("❌ Erro ao listar guilds!")
+            await ctx.send("❌ Erro ao listar guilds!")
 
     @app_commands.command(name="guild_criar", description="Cria uma nova guild")
     @app_commands.describe(nome="Nome da guild")

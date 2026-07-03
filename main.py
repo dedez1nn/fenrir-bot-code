@@ -434,6 +434,35 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
         pass
 
 
+@bot.event
+async def on_command_error(ctx: commands.Context, error: commands.CommandError):
+    if isinstance(error, commands.CommandNotFound):
+        return
+    if isinstance(error, (commands.MissingPermissions, commands.MissingRole, commands.MissingAnyRole)):
+        try:
+            await ctx.send("❌ Você não tem permissão para usar este comando.")
+        except Exception:
+            pass
+        return
+    if isinstance(error, commands.CheckFailure):
+        try:
+            await ctx.send("❌ Você não pode usar este comando aqui.")
+        except Exception:
+            pass
+        return
+    if isinstance(error, commands.UserInputError):
+        try:
+            await ctx.send(f"❌ Uso inválido: {error}")
+        except Exception:
+            pass
+        return
+    traceback.print_exception(type(error), error, error.__traceback__)
+    try:
+        await ctx.send("❌ Ocorreu um erro inesperado. Tente novamente mais tarde.")
+    except Exception:
+        pass
+
+
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
 

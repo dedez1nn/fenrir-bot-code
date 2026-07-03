@@ -1,6 +1,5 @@
 import discord
 from discord.ext import commands
-from discord import app_commands
 from datetime import datetime
 
 
@@ -46,14 +45,9 @@ class StatusCog(commands.Cog):
 
         await canal.send(embed=embed)
         
-    @app_commands.command(name="manutencao", description="Envia mensagem de reinício (DEVS).")
-    async def reiniciando(self, interaction: discord.Interaction):
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message(
-                "❌ Apenas administradores podem usar este comando!", ephemeral=True
-            )
-            return
-        
+    @commands.command(name="manutencao")
+    @commands.has_permissions(administrator=True)
+    async def reiniciando(self, ctx: commands.Context):
         embed = discord.Embed(
             title="🤖 Status do Bot",
             description="Olá, pessoal! Estarei **off-line** nos próximos minutos\n"
@@ -76,8 +70,8 @@ class StatusCog(commands.Cog):
             
         embed.set_footer(text="© 2025 ALCATEIA DO FENRIR. Todos os direitos reservados.")
 
-        await interaction.response.send_message(embed=embed)
-        
+        await ctx.send(embed=embed)
+
     @commands.command(name="changelog")
     async def changelog(self, ctx):
         embed_coins = discord.Embed(

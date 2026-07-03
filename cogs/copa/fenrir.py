@@ -3,7 +3,6 @@
 import logging
 
 import discord
-from discord import app_commands
 from discord.ext import commands
 
 from services import gate
@@ -26,16 +25,12 @@ class FenrirCog(commands.Cog):
         gate.load(channels)
         logger.info("Gate de canal carregado: %d guild(s) configurada(s)", len(channels))
 
-    @app_commands.command(
-        name="canal-fenrir",
-        description="Define o canal onde os comandos do bot podem ser usados (apenas admins)",
-    )
-    @app_commands.describe(canal="Canal permitido; omita para liberar em todos os canais")
-    @app_commands.default_permissions(administrator=True)
+    @commands.command(name="canal-fenrir")
+    @commands.has_permissions(administrator=True)
     async def cmd_canal_fenrir(
-        self, interaction: discord.Interaction, canal: discord.TextChannel | None = None
+        self, ctx: commands.Context, canal: discord.TextChannel | None = None
     ) -> None:
-        guild_id = interaction.guild_id
+        guild_id = ctx.guild.id
 
         if canal:
             await set_command_channel(guild_id, canal.id)
@@ -54,7 +49,7 @@ class FenrirCog(commands.Cog):
                 color=0x3B82F6,
             )
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
 
 async def setup(bot: commands.Bot) -> None:

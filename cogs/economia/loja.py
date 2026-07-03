@@ -127,7 +127,7 @@ class LojaView(discord.ui.View):
 
             await interaction.response.edit_message(embed=self.create_loja_embed(), view=self)
             await self.loja_cog.enviar_log_loja(
-                interaction,
+                interaction.user,
                 "Loja Atualizada",
                 f"**Ação:** Atualizou a visualização da loja\n**Página atual:** {self.page + 1}",
                 discord.Color.blue(),
@@ -225,7 +225,7 @@ class LojaCog(commands.Cog):
 
     async def enviar_log_loja(
         self,
-        interaction: discord.Interaction,
+        autor: discord.abc.User,
         acao: str,
         descricao: str,
         cor=discord.Color.gold(),
@@ -238,11 +238,11 @@ class LojaCog(commands.Cog):
             if canal_log:
                 embed_log = discord.Embed(
                     title=f"🏪 Loja - {acao}",
-                    description=f"{descricao}\n\n**Usuário:** {interaction.user.mention}",
+                    description=f"{descricao}\n\n**Usuário:** {autor.mention}",
                     color=cor,
                     timestamp=discord.utils.utcnow(),
                 )
-                embed_log.set_thumbnail(url=interaction.user.display_avatar.url)
+                embed_log.set_thumbnail(url=autor.display_avatar.url)
                 await canal_log.send(embed=embed_log)
         except Exception as e:
             print(f"❌ Erro ao enviar log loja: {e}")
@@ -260,7 +260,7 @@ class LojaCog(commands.Cog):
                     title="🏪 Loja Vazia",
                     description=(
                         "Não há itens disponíveis no momento.\n"
-                        "Os administradores podem adicionar itens usando `/adicionar_item`"
+                        "Os administradores podem adicionar itens usando `!adicionar_item`"
                     ),
                     color=discord.Color.orange(),
                 )
@@ -342,7 +342,7 @@ class LojaCog(commands.Cog):
 
             if resultado:
                 await self.enviar_log_loja(
-                    interaction,
+                    interaction.user,
                     "Compra Realizada",
                     f"**Item:** {item_nome}\n"
                     f"**Preço:** {preco_item} coins\n"
@@ -381,36 +381,25 @@ class LojaCog(commands.Cog):
             except Exception as fe:
                 print(f"❌ Erro ao enviar followup: {fe}")
 
-    @app_commands.command(name="adicionar_item", description="Adicionar um item à loja (ADM)")
-    @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.describe(
-        nome="Nome do item",
-        preco="Preço em coins",
-        descricao="Descrição breve do item",
-        cooldown_h="Cooldown em horas após compra (0 = sem cooldown)",
-    )
+    @commands.command(name="adicionar_item")
+    @commands.has_permissions(administrator=True)
     async def adicionar_item(
         self,
-        interaction: discord.Interaction,
+        ctx: commands.Context,
         nome: str,
         preco: int,
+        cooldown_h: float,
+        *,
         descricao: str,
-        cooldown_h: float = 0.0,
     ):
         if preco <= 0:
-            await interaction.response.send_message(
-                "❌ O preço deve ser maior que 0!", ephemeral=True
-            )
+            await ctx.send("❌ O preço deve ser maior que 0!")
             return
         if len(nome) > 50:
-            await interaction.response.send_message(
-                "❌ O nome deve ter no máximo 50 caracteres!", ephemeral=True
-            )
+            await ctx.send("❌ O nome deve ter no máximo 50 caracteres!")
             return
         if len(descricao) > 200:
-            await interaction.response.send_message(
-                "❌ A descrição deve ter no máximo 200 caracteres!", ephemeral=True
-            )
+            await ctx.send("❌ A descrição deve ter no máximo 200 caracteres!")
             return
 
         if self.bot.db:
@@ -420,7 +409,7 @@ class LojaCog(commands.Cog):
                 preco=preco,
                 descricao=descricao,
                 cooldown_h=cooldown_h,
-                criado_por=interaction.user.id,
+                criado_por=ctx.author.id,
             )
             novo_item = _db_row_to_item(db_row)
             self.loja_data["itens"].append(novo_item)
@@ -432,7 +421,7 @@ class LojaCog(commands.Cog):
                 "preco": preco,
                 "descricao": descricao,
                 "cooldown_h": cooldown_h,
-                "criado_por": interaction.user.id,
+                "criado_por": ctx.author.id,
                 "criado_em": time.time(),
             }
             self.loja_data.setdefault("itens", []).append(novo_item)
@@ -456,34 +445,29 @@ class LojaCog(commands.Cog):
         embed.add_field(name="📋 Descrição", value=descricao, inline=False)
         embed.add_field(name="📍 Posição", value=f"`#{posicao}` (após ordenação)", inline=False)
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
         await self.enviar_log_loja(
-            interaction,
+            ctx.author,
             "Item Adicionado",
             f"**Item:** {nome}\n**Preço:** {preco} coins\n"
             f"**Cooldown:** {cooldown_h}h\n**Posição:** #{posicao}",
             discord.Color.green(),
         )
 
-    @app_commands.command(name="remover_item", description="Remover um item da loja (ADM)")
-    @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.describe(
-        numero_item="Número do item a ser removido (1, 2, 3...)",
-        motivo="Motivo da remoção (opcional)",
-    )
+    @commands.command(name="remover_item")
+    @commands.has_permissions(administrator=True)
     async def remover_item(
         self,
-        interaction: discord.Interaction,
+        ctx: commands.Context,
         numero_item: int,
+        *,
         motivo: str = "Não especificado",
     ):
         item_encontrado = self.encontrar_item_por_posicao(numero_item)
         if not item_encontrado:
-            await interaction.response.send_message(
-                f"❌ Item `#{numero_item}` não encontrado na loja!", ephemeral=True
-            )
+            await ctx.send(f"❌ Item `#{numero_item}` não encontrado na loja!")
             await self.enviar_log_loja(
-                interaction,
+                ctx.author,
                 "Tentativa de Remoção - Erro",
                 f"Tentou remover item #{numero_item} — não encontrado.",
                 discord.Color.red(),
@@ -510,9 +494,9 @@ class LojaCog(commands.Cog):
         embed.add_field(name="📍 Posição removida", value=f"`#{numero_item}`", inline=True)
         embed.add_field(name="📋 Motivo", value=motivo, inline=False)
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
         await self.enviar_log_loja(
-            interaction,
+            ctx.author,
             "Item Removido",
             f"**Item:** {item_encontrado['nome']}\n"
             f"**Preço:** {item_encontrado['preco']} coins\n"
@@ -520,14 +504,13 @@ class LojaCog(commands.Cog):
             discord.Color.orange(),
         )
 
-    @app_commands.command(name="limpar_loja", description="Remover TODOS os itens da loja (ADM)")
-    @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.describe(motivo="Motivo da limpeza (opcional)")
+    @commands.command(name="limpar_loja")
+    @commands.has_permissions(administrator=True)
     async def limpar_loja(
-        self, interaction: discord.Interaction, motivo: str = "Não especificado"
+        self, ctx: commands.Context, *, motivo: str = "Não especificado"
     ):
         if not self.loja_data["itens"]:
-            await interaction.response.send_message("❌ A loja já está vazia!", ephemeral=True)
+            await ctx.send("❌ A loja já está vazia!")
             return
 
         quantidade = len(self.loja_data["itens"])
@@ -554,23 +537,13 @@ class LojaCog(commands.Cog):
             lista += f"\n• ... e mais {quantidade - 5} itens"
         embed.add_field(name="🗑️ Itens Removidos", value=lista, inline=False)
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
         await self.enviar_log_loja(
-            interaction,
+            ctx.author,
             "Loja Limpa",
             f"**Itens removidos:** {quantidade}\n**Motivo:** {motivo}",
             discord.Color.red(),
         )
-
-    @adicionar_item.error
-    @remover_item.error
-    @limpar_loja.error
-    async def comandos_adm_error(self, interaction: discord.Interaction, error):
-        if isinstance(error, app_commands.MissingPermissions):
-            await interaction.response.send_message(
-                "❌ Você não tem permissão de administrador para usar este comando.",
-                ephemeral=True,
-            )
 
 
 async def setup(bot: commands.Bot):

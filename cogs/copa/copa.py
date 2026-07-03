@@ -545,39 +545,32 @@ class CopaCog(commands.Cog):
         embed = monitor.build_pre_game_embed(m, mins, live_url)
         await interaction.followup.send(embed=embed)
 
-    @app_commands.command(
-        name="copa-jogos-hoje",
-        description="(Admin) Dispara manualmente o resumo dos jogos de hoje (até 09:00 BRT de amanhã)",
-    )
-    @app_commands.default_permissions(administrator=True)
-    async def cmd_copa_jogos_hoje(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
+    @commands.command(name="copa-jogos-hoje")
+    @commands.has_permissions(administrator=True)
+    async def cmd_copa_jogos_hoje(self, ctx: commands.Context) -> None:
         # Comando manual do admin: força o reenvio mesmo que já haja resumo fixado.
         jogos = await self._send_daily_summary(repin=True, force=True)
         if jogos is None:
-            await interaction.followup.send("❌ Erro ao buscar jogos. Tente novamente.", ephemeral=True)
+            await ctx.send("❌ Erro ao buscar jogos. Tente novamente.")
             return
         if not jogos:
-            await interaction.followup.send(
-                "Nenhum jogo na janela de hoje (até 09:00 BRT de amanhã).", ephemeral=True
-            )
+            await ctx.send("Nenhum jogo na janela de hoje (até 09:00 BRT de amanhã).")
             return
-        await interaction.followup.send(f"✅ Resumo enviado ({len(jogos)} jogo(s)).", ephemeral=True)
+        await ctx.send(f"✅ Resumo enviado ({len(jogos)} jogo(s)).")
 
-    @app_commands.command(name="config-copa", description="Guia e configuração das notificações da Copa (apenas admins)")
-    @app_commands.describe(canal="(Opcional) Canal onde as notificações automáticas serão enviadas")
-    @app_commands.default_permissions(administrator=True)
+    @commands.command(name="config-copa")
+    @commands.has_permissions(administrator=True)
     async def cmd_config_copa(
-        self, interaction: discord.Interaction, canal: discord.TextChannel | None = None
+        self, ctx: commands.Context, canal: discord.TextChannel | None = None
     ) -> None:
-        guild_id = interaction.guild_id
+        guild_id = ctx.guild.id
 
         if canal:
             await set_copa_channel(guild_id, canal.id)
             self._monitor_channels = await get_all_copa_channels()
 
         channel_id = await get_copa_channel(guild_id)
-        ch = interaction.guild.get_channel(channel_id) if channel_id else None
+        ch = ctx.guild.get_channel(channel_id) if channel_id else None
         canal_str = ch.mention if ch else "❌ Não configurado"
 
         embed = discord.Embed(
@@ -601,12 +594,12 @@ class CopaCog(commands.Cog):
                 "`/copa-time <seleção>` — Todos os jogos de uma seleção\n"
                 "`/copa-artilharia` — Top artilheiros da Copa\n"
                 "`/chaveamento` — Imagem do chaveamento do mata-mata\n"
-                "`/copa-jogos-hoje` — (Admin) Dispara o resumo de hoje na hora"
+                "`!copa-jogos-hoje` — (Admin) Dispara o resumo de hoje na hora"
             ),
             inline=False,
         )
-        embed.set_footer(text="Use /config-copa #canal para definir onde as notificações chegam")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        embed.set_footer(text="Use !config-copa #canal para definir onde as notificações chegam")
+        await ctx.send(embed=embed)
 
 
 async def setup(bot: commands.Bot) -> None:

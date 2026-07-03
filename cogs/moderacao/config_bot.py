@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-from discord import app_commands
+from typing import Literal
 import logging
 
 log = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ class ConfigBotView(discord.ui.View):
                       f"• **Help**: {self._format_channel(self.config_data.get('help_channel_id'))}\n"
                       f"• **Antispam Log**: {self._format_channel(self.config_data.get('antispam_log_channel_id'))}\n"
                       f"• **Antinuke Log**: {self._format_channel(self.config_data.get('antinuke_log_channel_id'))}\n\n"
-                      f"Para editar, use: `/config-bot-canais-log`",
+                      f"Para editar, use: `!config-canais-log`",
                 inline=False
             )
 
@@ -76,7 +76,7 @@ class ConfigBotView(discord.ui.View):
                       f"• **Coins Log**: {self._format_channel(self.config_data.get('coins_log_channel_id'))}\n"
                       f"• **XP Log**: {self._format_channel(self.config_data.get('xp_log_channel_id'))}\n"
                       f"• **Level Up**: {self._format_channel(self.config_data.get('levelup_channel_id'))}\n\n"
-                      f"Para editar, use: `/config-bot-canais-economia`",
+                      f"Para editar, use: `!config-canais-embeds` (pix/loja) ou `!config-canais-sistemas` (coins/xp/levelup)",
                 inline=False
             )
 
@@ -89,7 +89,7 @@ class ConfigBotView(discord.ui.View):
                       f"• **Voice Creator**: {self._format_channel(self.config_data.get('voice_creator_channel_id'))}\n"
                       f"• **Adventure Log**: {self._format_channel(self.config_data.get('adventure_log_channel_id'))}\n"
                       f"• **Guild Raid**: {self._format_channel(self.config_data.get('guild_raid_channel_id'))}\n\n"
-                      f"Para editar, use: `/config-canais-sistemas`",
+                      f"Para editar, use: `!config-canais-sistemas`",
                 inline=False
             )
 
@@ -101,7 +101,7 @@ class ConfigBotView(discord.ui.View):
                       f"• **Aventureiro**: R$ {premium_prices.get('aventureiro', 0)}\n"
                       f"• **Lendário**: R$ {premium_prices.get('lendario', 0)}\n"
                       f"• **Mítico**: R$ {premium_prices.get('mitico', 0)}\n\n"
-                      f"Para editar, use: `/config-bot-premium`",
+                      f"Para editar, use: `!config-premium`",
                 inline=False
             )
 
@@ -113,7 +113,7 @@ class ConfigBotView(discord.ui.View):
                       f"• **Aventureiro**: {premium_multipliers.get('aventureiro', 1)}x\n"
                       f"• **Lendário**: {premium_multipliers.get('lendario', 1)}x\n"
                       f"• **Mítico**: {premium_multipliers.get('mitico', 1)}x\n\n"
-                      f"Para editar, use: `/config-bot-premium`",
+                      f"Sem comando dedicado — edite via painel administrativo (API).",
                 inline=False
             )
 
@@ -126,7 +126,7 @@ class ConfigBotView(discord.ui.View):
                       f"• **Mensagem**: {self.config_data.get('coins_por_mensagem', 5000)} coins\n"
                       f"• **Voz**: {self.config_data.get('coins_por_voz', 15000)} coins\n"
                       f"• **Bonus Nível**: {self.config_data.get('bonus_coins_por_nivel', 50000)} coins\n\n"
-                      f"Para editar, use: `/config-bot-economia`",
+                      f"Para editar, use: `!config-economia`",
                 inline=False
             )
 
@@ -136,7 +136,7 @@ class ConfigBotView(discord.ui.View):
                 value=f"Valores de XP para interações.\n\n"
                       f"• **Mensagem**: {self.config_data.get('xp_por_mensagem', 5000)} XP\n"
                       f"• **Voz**: {self.config_data.get('xp_por_voz', 15000)} XP (a cada {self.config_data.get('voice_xp_interval_s', 300)}s)\n\n"
-                      f"Para editar, use: `/config-bot-xp`",
+                      f"Para editar, use: `!config-xp`",
                 inline=False
             )
 
@@ -147,7 +147,7 @@ class ConfigBotView(discord.ui.View):
                 name="🔔 Papéis de Notificação",
                 value=f"Papéis que serão mencionados para notificações importantes.\n\n"
                       f"**Papéis**: {admin_mention}\n\n"
-                      f"Para editar, use: `/config-cargos`",
+                      f"Para editar, use: `!config-cargos`",
                 inline=False
             )
 
@@ -296,19 +296,15 @@ class ConfigBotCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="config-bot", description="🔧 Guia completo de configuração do bot")
-    async def config_bot(self, interaction: discord.Interaction):
+    @commands.command(name="config-bot")
+    @commands.has_permissions(administrator=True)
+    async def config_bot(self, ctx: commands.Context):
         """Inicia o wizard interativo de configuração."""
 
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("❌ Você precisa ser administrador para usar este comando.", ephemeral=True)
-            return
-
         if not self.bot.db:
-            await interaction.response.send_message("❌ Banco de dados não disponível.", ephemeral=True)
+            await ctx.send("❌ Banco de dados não disponível.")
             return
 
-        # Responder imediatamente com placeholder
         loading_embed = discord.Embed(
             title="⚙️ Carregando Configuração...",
             description="Aguarde enquanto carregamos as configurações da guild.",
@@ -316,7 +312,7 @@ class ConfigBotCog(commands.Cog):
         )
 
         try:
-            await interaction.response.send_message(embed=loading_embed, ephemeral=True)
+            msg = await ctx.send(embed=loading_embed)
         except Exception as e:
             log.error(f"Erro ao responder: {e}")
             return
@@ -324,9 +320,9 @@ class ConfigBotCog(commands.Cog):
         try:
             from db.config import load_server_config
 
-            config = await load_server_config(self.bot.db, interaction.guild_id)
+            config = await load_server_config(self.bot.db, ctx.guild.id)
             if not config:
-                await interaction.edit_original_response(
+                await msg.edit(
                     embed=discord.Embed(
                         title="❌ Erro",
                         description="Configuração da guild não encontrada.",
@@ -337,15 +333,15 @@ class ConfigBotCog(commands.Cog):
                 return
 
             config_data = config.to_dict()
-            view = ConfigBotView(self.bot, interaction.guild_id, config_data, 1, 9)
+            view = ConfigBotView(self.bot, ctx.guild.id, config_data, 1, 9)
             step_embed = await view.get_step_embed()
 
-            await interaction.edit_original_response(embed=step_embed, view=view)
+            await msg.edit(embed=step_embed, view=view)
 
         except Exception as e:
             log.error(f"Erro ao iniciar config-bot: {e}")
             try:
-                await interaction.edit_original_response(
+                await msg.edit(
                     embed=discord.Embed(
                         title="❌ Erro",
                         description=f"Erro ao carregar: {e}",
@@ -357,43 +353,31 @@ class ConfigBotCog(commands.Cog):
                 log.error(f"Erro ao editar mensagem de erro: {edit_err}")
 
 
-    @app_commands.command(name="config-canais-log", description="Configurar canais de log")
-    @app_commands.describe(
-        commands="Canal para logs de comandos",
-        status="Canal de status do bot",
-        help="Canal de ajuda",
-        antispam="Canal de log antispam",
-        antinuke="Canal de log antinuke"
-    )
+    @commands.command(name="config-canais-log")
+    @commands.has_permissions(administrator=True)
     async def config_canais_log(
         self,
-        interaction: discord.Interaction,
-        commands: discord.TextChannel = None,
+        ctx: commands.Context,
+        commands_ch: discord.TextChannel = None,
         status: discord.TextChannel = None,
-        help: discord.TextChannel = None,
+        help_ch: discord.TextChannel = None,
         antispam: discord.TextChannel = None,
         antinuke: discord.TextChannel = None
     ):
         """Edita canais de log."""
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("❌ Você precisa ser administrador.", ephemeral=True)
-            return
-
         if not self.bot.db:
-            await interaction.response.send_message("❌ Banco de dados não disponível.", ephemeral=True)
+            await ctx.send("❌ Banco de dados não disponível.")
             return
-
-        await interaction.response.defer(ephemeral=True)
 
         try:
             async with self.bot.db.acquire() as conn:
                 updates = []
-                params = [interaction.guild_id]
+                params = [ctx.guild.id]
                 idx = 2
 
-                if commands:
+                if commands_ch:
                     updates.append(f"commands_channel_id = ${idx}")
-                    params.append(commands.id)
+                    params.append(commands_ch.id)
                     idx += 1
 
                 if status:
@@ -401,9 +385,9 @@ class ConfigBotCog(commands.Cog):
                     params.append(status.id)
                     idx += 1
 
-                if help:
+                if help_ch:
                     updates.append(f"help_channel_id = ${idx}")
-                    params.append(help.id)
+                    params.append(help_ch.id)
                     idx += 1
 
                 if antispam:
@@ -417,7 +401,7 @@ class ConfigBotCog(commands.Cog):
                     idx += 1
 
                 if not updates:
-                    await interaction.followup.send("⚠️ Nenhum canal foi especificado.", ephemeral=True)
+                    await ctx.send("⚠️ Nenhum canal foi especificado.")
                     return
 
                 updates.append("updated_at = NOW()")
@@ -425,12 +409,12 @@ class ConfigBotCog(commands.Cog):
                 await conn.execute(query, *params)
 
                 from db.config import refresh_server_config
-                await refresh_server_config(self.bot.db, interaction.guild_id)
+                await refresh_server_config(self.bot.db, ctx.guild.id)
 
                 async with self.bot.db.acquire() as conn:
                     await conn.execute(
                         "SELECT pg_notify('fenrir_cache', $1)",
-                        f"config:{interaction.guild_id}"
+                        f"config:{ctx.guild.id}"
                     )
 
             embed = discord.Embed(
@@ -438,37 +422,28 @@ class ConfigBotCog(commands.Cog):
                 description="Canais foram configurados com sucesso!",
                 color=discord.Color.green()
             )
-            if commands:
-                embed.add_field(name="📢 Commands", value=commands.mention, inline=True)
+            if commands_ch:
+                embed.add_field(name="📢 Commands", value=commands_ch.mention, inline=True)
             if status:
                 embed.add_field(name="📊 Status", value=status.mention, inline=True)
-            if help:
-                embed.add_field(name="❓ Help", value=help.mention, inline=True)
+            if help_ch:
+                embed.add_field(name="❓ Help", value=help_ch.mention, inline=True)
             if antispam:
                 embed.add_field(name="🚫 Antispam", value=antispam.mention, inline=True)
             if antinuke:
                 embed.add_field(name="☢️ Antinuke", value=antinuke.mention, inline=True)
 
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await ctx.send(embed=embed)
 
         except Exception as e:
             log.error(f"Erro ao configurar canais de log: {e}")
-            await interaction.followup.send(f"❌ Erro: {e}", ephemeral=True)
+            await ctx.send(f"❌ Erro: {e}")
 
-    @app_commands.command(
-        name="config-canais-embeds",
-        description="Configurar canais das embeds: pix, ticket, cores, entrada e saída",
-    )
-    @app_commands.describe(
-        pix="Canal da embed de planos Pix/premium",
-        ticket="Canal da embed de tickets",
-        cores="Canal da embed de cores/cargos",
-        entrada="Canal de boas-vindas (entrada de membros)",
-        saida="Canal de log de saída de membros",
-    )
+    @commands.command(name="config-canais-embeds")
+    @commands.has_permissions(administrator=True)
     async def config_canais_embeds(
         self,
-        interaction: discord.Interaction,
+        ctx: commands.Context,
         pix: discord.TextChannel = None,
         ticket: discord.TextChannel = None,
         cores: discord.TextChannel = None,
@@ -476,20 +451,14 @@ class ConfigBotCog(commands.Cog):
         saida: discord.TextChannel = None,
     ):
         """Edita os canais das embeds fixas (pix/ticket/cores) e logs de entrada/saída."""
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("❌ Você precisa ser administrador.", ephemeral=True)
-            return
-
         if not self.bot.db:
-            await interaction.response.send_message("❌ Banco de dados não disponível.", ephemeral=True)
+            await ctx.send("❌ Banco de dados não disponível.")
             return
-
-        await interaction.response.defer(ephemeral=True)
 
         try:
             async with self.bot.db.acquire() as conn:
                 updates = []
-                params = [interaction.guild_id]
+                params = [ctx.guild.id]
                 idx = 2
 
                 if pix:
@@ -518,7 +487,7 @@ class ConfigBotCog(commands.Cog):
                     idx += 1
 
                 if not updates:
-                    await interaction.followup.send("⚠️ Nenhum canal foi especificado.", ephemeral=True)
+                    await ctx.send("⚠️ Nenhum canal foi especificado.")
                     return
 
                 updates.append("updated_at = NOW()")
@@ -526,12 +495,12 @@ class ConfigBotCog(commands.Cog):
                 await conn.execute(query, *params)
 
                 from db.config import refresh_server_config
-                await refresh_server_config(self.bot.db, interaction.guild_id)
+                await refresh_server_config(self.bot.db, ctx.guild.id)
 
                 async with self.bot.db.acquire() as conn:
                     await conn.execute(
                         "SELECT pg_notify('fenrir_cache', $1)",
-                        f"config:{interaction.guild_id}"
+                        f"config:{ctx.guild.id}"
                     )
 
             embed = discord.Embed(
@@ -550,23 +519,17 @@ class ConfigBotCog(commands.Cog):
             if saida:
                 embed.add_field(name="🚪 Saída", value=saida.mention, inline=True)
 
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await ctx.send(embed=embed)
 
         except Exception as e:
             log.error(f"Erro ao configurar canais de embeds: {e}")
-            await interaction.followup.send(f"❌ Erro: {e}", ephemeral=True)
+            await ctx.send(f"❌ Erro: {e}")
 
-    @app_commands.command(name="config-economia", description="Configurar ganhos de moeda")
-    @app_commands.describe(
-        daily="Coins do daily",
-        bonus_daily="Bonus de streak do daily",
-        mensagem="Coins por mensagem",
-        voz="Coins por minuto em voz",
-        nivel="Bonus de coins por level up"
-    )
+    @commands.command(name="config-economia")
+    @commands.has_permissions(administrator=True)
     async def config_economia(
         self,
-        interaction: discord.Interaction,
+        ctx: commands.Context,
         daily: int = None,
         bonus_daily: int = None,
         mensagem: int = None,
@@ -574,20 +537,14 @@ class ConfigBotCog(commands.Cog):
         nivel: int = None
     ):
         """Edita ganhos de coins."""
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("❌ Você precisa ser administrador.", ephemeral=True)
-            return
-
         if not self.bot.db:
-            await interaction.response.send_message("❌ Banco de dados não disponível.", ephemeral=True)
+            await ctx.send("❌ Banco de dados não disponível.")
             return
-
-        await interaction.response.defer(ephemeral=True)
 
         try:
             async with self.bot.db.acquire() as conn:
                 updates = []
-                params = [interaction.guild_id]
+                params = [ctx.guild.id]
                 idx = 2
 
                 if daily is not None:
@@ -616,7 +573,7 @@ class ConfigBotCog(commands.Cog):
                     idx += 1
 
                 if not updates:
-                    await interaction.followup.send("⚠️ Nenhum valor foi especificado.", ephemeral=True)
+                    await ctx.send("⚠️ Nenhum valor foi especificado.")
                     return
 
                 updates.append("updated_at = NOW()")
@@ -624,12 +581,12 @@ class ConfigBotCog(commands.Cog):
                 await conn.execute(query, *params)
 
                 from db.config import refresh_server_config
-                await refresh_server_config(self.bot.db, interaction.guild_id)
+                await refresh_server_config(self.bot.db, ctx.guild.id)
 
                 async with self.bot.db.acquire() as conn:
                     await conn.execute(
                         "SELECT pg_notify('fenrir_cache', $1)",
-                        f"config:{interaction.guild_id}"
+                        f"config:{ctx.guild.id}"
                     )
 
             embed = discord.Embed(
@@ -647,40 +604,30 @@ class ConfigBotCog(commands.Cog):
             if nivel is not None:
                 embed.add_field(name="📈 Por Level", value=f"{nivel} coins", inline=True)
 
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await ctx.send(embed=embed)
 
         except Exception as e:
             log.error(f"Erro ao configurar economia: {e}")
-            await interaction.followup.send(f"❌ Erro: {e}", ephemeral=True)
+            await ctx.send(f"❌ Erro: {e}")
 
-    @app_commands.command(name="config-xp", description="Configurar ganhos de XP")
-    @app_commands.describe(
-        mensagem="XP por mensagem",
-        voz="XP por minuto em voz",
-        intervalo="Intervalo em segundos para dar XP em voz"
-    )
+    @commands.command(name="config-xp")
+    @commands.has_permissions(administrator=True)
     async def config_xp(
         self,
-        interaction: discord.Interaction,
+        ctx: commands.Context,
         mensagem: int = None,
         voz: int = None,
         intervalo: int = None
     ):
         """Edita ganhos de XP."""
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("❌ Você precisa ser administrador.", ephemeral=True)
-            return
-
         if not self.bot.db:
-            await interaction.response.send_message("❌ Banco de dados não disponível.", ephemeral=True)
+            await ctx.send("❌ Banco de dados não disponível.")
             return
-
-        await interaction.response.defer(ephemeral=True)
 
         try:
             async with self.bot.db.acquire() as conn:
                 updates = []
-                params = [interaction.guild_id]
+                params = [ctx.guild.id]
                 idx = 2
 
                 if mensagem is not None:
@@ -699,7 +646,7 @@ class ConfigBotCog(commands.Cog):
                     idx += 1
 
                 if not updates:
-                    await interaction.followup.send("⚠️ Nenhum valor foi especificado.", ephemeral=True)
+                    await ctx.send("⚠️ Nenhum valor foi especificado.")
                     return
 
                 updates.append("updated_at = NOW()")
@@ -707,12 +654,12 @@ class ConfigBotCog(commands.Cog):
                 await conn.execute(query, *params)
 
                 from db.config import refresh_server_config
-                await refresh_server_config(self.bot.db, interaction.guild_id)
+                await refresh_server_config(self.bot.db, ctx.guild.id)
 
                 async with self.bot.db.acquire() as conn:
                     await conn.execute(
                         "SELECT pg_notify('fenrir_cache', $1)",
-                        f"config:{interaction.guild_id}"
+                        f"config:{ctx.guild.id}"
                     )
 
             embed = discord.Embed(
@@ -726,42 +673,32 @@ class ConfigBotCog(commands.Cog):
             if intervalo is not None:
                 embed.add_field(name="⏱️ Intervalo", value=f"{intervalo} segundos", inline=True)
 
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await ctx.send(embed=embed)
 
         except Exception as e:
             log.error(f"Erro ao configurar XP: {e}")
-            await interaction.followup.send(f"❌ Erro: {e}", ephemeral=True)
+            await ctx.send(f"❌ Erro: {e}")
 
-    @app_commands.command(name="config-premium", description="Configurar planos premium")
-    @app_commands.describe(
-        aventureiro="Preço do plano aventureiro",
-        lendario="Preço do plano lendário",
-        mitico="Preço do plano mítico"
-    )
+    @commands.command(name="config-premium")
+    @commands.has_permissions(administrator=True)
     async def config_premium(
         self,
-        interaction: discord.Interaction,
+        ctx: commands.Context,
         aventureiro: int = None,
         lendario: int = None,
         mitico: int = None
     ):
         """Edita preços dos planos premium."""
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("❌ Você precisa ser administrador.", ephemeral=True)
-            return
-
         if not self.bot.db:
-            await interaction.response.send_message("❌ Banco de dados não disponível.", ephemeral=True)
+            await ctx.send("❌ Banco de dados não disponível.")
             return
-
-        await interaction.response.defer(ephemeral=True)
 
         try:
             from db.config import load_server_config
 
-            config = await load_server_config(self.bot.db, interaction.guild_id)
+            config = await load_server_config(self.bot.db, ctx.guild.id)
             if not config:
-                await interaction.followup.send("❌ Configuração não encontrada.", ephemeral=True)
+                await ctx.send("❌ Configuração não encontrada.")
                 return
 
             prices = dict(config.get('premium_prices', {}))
@@ -777,15 +714,15 @@ class ConfigBotCog(commands.Cog):
                 await conn.execute(
                     "UPDATE server_config SET premium_prices = $1::jsonb, updated_at = NOW() WHERE guild_id = $2",
                     prices,
-                    interaction.guild_id
+                    ctx.guild.id
                 )
 
                 from db.config import refresh_server_config
-                await refresh_server_config(self.bot.db, interaction.guild_id)
+                await refresh_server_config(self.bot.db, ctx.guild.id)
 
                 await conn.execute(
                     "SELECT pg_notify('fenrir_cache', $1)",
-                    f"config:{interaction.guild_id}"
+                    f"config:{ctx.guild.id}"
                 )
 
             embed = discord.Embed(
@@ -796,11 +733,11 @@ class ConfigBotCog(commands.Cog):
             embed.add_field(name="🌟 Lendário", value=f"R$ {prices.get('lendario', 0)}", inline=True)
             embed.add_field(name="✨ Mítico", value=f"R$ {prices.get('mitico', 0)}", inline=True)
 
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await ctx.send(embed=embed)
 
         except Exception as e:
             log.error(f"Erro ao configurar premium: {e}")
-            await interaction.followup.send(f"❌ Erro: {e}", ephemeral=True)
+            await ctx.send(f"❌ Erro: {e}")
 
     # ─── Persistência genérica ────────────────────────────────────────────────
 
@@ -827,23 +764,11 @@ class ConfigBotCog(commands.Cog):
         from db.config import refresh_server_config
         await refresh_server_config(self.bot.db, guild_id)
 
-    @app_commands.command(
-        name="config-canais-sistemas",
-        description="Configurar canais dos sistemas: criador de voz, raids, aventuras e logs",
-    )
-    @app_commands.describe(
-        voz_criador="Canal de voz gatilho do criador de salas",
-        raids="Canal de raids/alianças de guild",
-        aventuras="Canal de log de aventuras",
-        coins_log="Canal de log de coins",
-        xp_log="Canal de log de XP",
-        levelup="Canal de anúncios de level up",
-        premium_categoria="Categoria onde os canais de pagamento Pix são criados",
-        premium_log="Canal de log de expiração de premium",
-    )
+    @commands.command(name="config-canais-sistemas")
+    @commands.has_permissions(administrator=True)
     async def config_canais_sistemas(
         self,
-        interaction: discord.Interaction,
+        ctx: commands.Context,
         voz_criador: discord.VoiceChannel = None,
         raids: discord.TextChannel = None,
         aventuras: discord.TextChannel = None,
@@ -854,15 +779,9 @@ class ConfigBotCog(commands.Cog):
         premium_log: discord.TextChannel = None,
     ):
         """Persiste os canais que hoje dependem de IDs padrão hardcoded."""
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("❌ Você precisa ser administrador.", ephemeral=True)
-            return
-
         if not self.bot.db:
-            await interaction.response.send_message("❌ Banco de dados não disponível.", ephemeral=True)
+            await ctx.send("❌ Banco de dados não disponível.")
             return
-
-        await interaction.response.defer(ephemeral=True)
 
         fields = {}
         if voz_criador:
@@ -883,14 +802,14 @@ class ConfigBotCog(commands.Cog):
             fields["premium_log_channel_id"] = premium_log.id
 
         if not fields:
-            await interaction.followup.send("⚠️ Nenhum canal foi especificado.", ephemeral=True)
+            await ctx.send("⚠️ Nenhum canal foi especificado.")
             return
 
         try:
-            await self._persist_config(interaction.guild_id, fields)
+            await self._persist_config(ctx.guild.id, fields)
         except Exception as e:
             log.error(f"Erro ao configurar canais de sistemas: {e}")
-            await interaction.followup.send(f"❌ Erro: {e}", ephemeral=True)
+            await ctx.send(f"❌ Erro: {e}")
             return
 
         embed = discord.Embed(
@@ -914,39 +833,22 @@ class ConfigBotCog(commands.Cog):
         if premium_log:
             embed.add_field(name="💎 Premium Log", value=premium_log.mention, inline=True)
 
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
-    @app_commands.command(
-        name="config-cargos",
-        description="Configurar cargos: cores gratuitas/premium, acesso especial e ping de admins",
-    )
-    @app_commands.describe(
-        tipo="Qual conjunto de cargos configurar",
-        modo="Substituir a lista inteira, adicionar ou remover cargos",
-        cargo1="Cargo",
-        cargo2="Cargo",
-        cargo3="Cargo",
-        cargo4="Cargo",
-        cargo5="Cargo",
-    )
-    @app_commands.choices(
-        tipo=[
-            app_commands.Choice(name="Cores gratuitas", value="free_color_role_ids"),
-            app_commands.Choice(name="Cores premium", value="premium_color_role_ids"),
-            app_commands.Choice(name="Acesso especial", value="special_access_role_ids"),
-            app_commands.Choice(name="Ping de admins", value="admin_ping_ids"),
-        ],
-        modo=[
-            app_commands.Choice(name="Substituir", value="substituir"),
-            app_commands.Choice(name="Adicionar", value="adicionar"),
-            app_commands.Choice(name="Remover", value="remover"),
-        ],
-    )
+    _CARGOS_TIPO_LABELS = {
+        "free_color_role_ids": "Cores gratuitas",
+        "premium_color_role_ids": "Cores premium",
+        "special_access_role_ids": "Acesso especial",
+        "admin_ping_ids": "Ping de admins",
+    }
+
+    @commands.command(name="config-cargos")
+    @commands.has_permissions(administrator=True)
     async def config_cargos(
         self,
-        interaction: discord.Interaction,
-        tipo: app_commands.Choice[str],
-        modo: app_commands.Choice[str],
+        ctx: commands.Context,
+        tipo: Literal["free_color_role_ids", "premium_color_role_ids", "special_access_role_ids", "admin_ping_ids"],
+        modo: Literal["substituir", "adicionar", "remover"],
         cargo1: discord.Role = None,
         cargo2: discord.Role = None,
         cargo3: discord.Role = None,
@@ -954,49 +856,43 @@ class ConfigBotCog(commands.Cog):
         cargo5: discord.Role = None,
     ):
         """Persiste os arrays de cargos (BIGINT[]) que hoje ficam vazios ou hardcoded."""
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("❌ Você precisa ser administrador.", ephemeral=True)
-            return
-
         if not self.bot.db:
-            await interaction.response.send_message("❌ Banco de dados não disponível.", ephemeral=True)
+            await ctx.send("❌ Banco de dados não disponível.")
             return
 
-        await interaction.response.defer(ephemeral=True)
-
-        coluna = tipo.value
+        coluna = tipo
         selecionados = [c.id for c in (cargo1, cargo2, cargo3, cargo4, cargo5) if c]
         if not selecionados:
-            await interaction.followup.send("⚠️ Nenhum cargo foi especificado.", ephemeral=True)
+            await ctx.send("⚠️ Nenhum cargo foi especificado.")
             return
 
         try:
             from db.config import load_server_config
 
-            config = await load_server_config(self.bot.db, interaction.guild_id)
+            config = await load_server_config(self.bot.db, ctx.guild.id)
             atuais = list(config.get(coluna) or []) if config else []
 
-            if modo.value == "substituir":
+            if modo == "substituir":
                 nova = selecionados
-            elif modo.value == "adicionar":
+            elif modo == "adicionar":
                 nova = atuais + [rid for rid in selecionados if rid not in atuais]
             else:  # remover
                 nova = [rid for rid in atuais if rid not in selecionados]
 
-            await self._persist_config(interaction.guild_id, {coluna: nova})
+            await self._persist_config(ctx.guild.id, {coluna: nova})
         except Exception as e:
             log.error(f"Erro ao configurar cargos ({coluna}): {e}")
-            await interaction.followup.send(f"❌ Erro: {e}", ephemeral=True)
+            await ctx.send(f"❌ Erro: {e}")
             return
 
         cargos_txt = ", ".join(f"<@&{rid}>" for rid in nova) if nova else "*(nenhum)*"
         embed = discord.Embed(
             title="✅ Cargos Atualizados",
-            description=f"**{tipo.name}** — modo **{modo.name.lower()}**",
+            description=f"**{self._CARGOS_TIPO_LABELS.get(tipo, tipo)}** — modo **{modo}**",
             color=discord.Color.green(),
         )
         embed.add_field(name="Lista atual", value=cargos_txt, inline=False)
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
 
 async def setup(bot):

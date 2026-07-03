@@ -1,6 +1,5 @@
 import pytest
 from unittest.mock import AsyncMock, Mock
-import discord
 
 from cogs.moderacao.addrem import AddRole
 
@@ -12,25 +11,18 @@ def cog():
 
 
 @pytest.fixture
-def interaction():
-    interaction = AsyncMock()
+def ctx():
+    ctx = AsyncMock()
+    ctx.send = AsyncMock()
 
-    # response e followup
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
-    interaction.followup.send = AsyncMock()
+    ctx.author = Mock()
+    ctx.author.mention = "@admin"
 
-    # usuário com permissão
-    interaction.user = Mock()
-    interaction.user.guild_permissions = Mock(manage_roles=True)
-    interaction.user.mention = "@admin"
+    ctx.guild = Mock()
+    ctx.guild.me = Mock()
+    ctx.guild.me.top_role = Mock(position=10)
 
-    # guild e bot role
-    interaction.guild = Mock()
-    interaction.guild.me = Mock()
-    interaction.guild.me.top_role = Mock(position=10)
-
-    return interaction
+    return ctx
 
 
 @pytest.fixture
@@ -58,44 +50,29 @@ def member():
 # -----------------------
 
 @pytest.mark.asyncio
-async def test_addrole_success(cog, interaction, member, role):
-    await cog.addrole.callback(cog, interaction, member, role)
+async def test_addrole_success(cog, ctx, member, role):
+    await cog.addrole.callback(cog, ctx, member, role)
 
     member.add_roles.assert_called_once_with(role)
-    interaction.response.send_message.assert_called()
+    ctx.send.assert_called()
 
 
 @pytest.mark.asyncio
-async def test_addrole_sem_permissao(cog, interaction, member, role):
-    interaction.user.guild_permissions.manage_roles = False
-
-    await cog.addrole.callback(cog, interaction, member, role)
-
-    interaction.response.send_message.assert_called_with(
-        "❌ Você não tem permissão para gerenciar cargos.",
-        ephemeral=True
-    )
-
-
-@pytest.mark.asyncio
-async def test_addrole_cargo_alto(cog, interaction, member, role):
+async def test_addrole_cargo_alto(cog, ctx, member, role):
     role.position = 20
 
-    await cog.addrole.callback(cog, interaction, member, role)
+    await cog.addrole.callback(cog, ctx, member, role)
 
-    interaction.response.send_message.assert_called_with(
-        "❌ Não posso adicionar este cargo (posição muito alta).",
-        ephemeral=True
-    )
+    ctx.send.assert_called_with("❌ Não posso adicionar este cargo (posição muito alta).")
 
 
 @pytest.mark.asyncio
-async def test_addrole_usuario_ja_tem(cog, interaction, member, role):
+async def test_addrole_usuario_ja_tem(cog, ctx, member, role):
     member.roles = [role]
 
-    await cog.addrole.callback(cog, interaction, member, role)
+    await cog.addrole.callback(cog, ctx, member, role)
 
-    interaction.response.send_message.assert_called()
+    ctx.send.assert_called()
 
 
 # -----------------------
@@ -103,21 +80,21 @@ async def test_addrole_usuario_ja_tem(cog, interaction, member, role):
 # -----------------------
 
 @pytest.mark.asyncio
-async def test_removerole_success(cog, interaction, member, role):
+async def test_removerole_success(cog, ctx, member, role):
     member.roles = [role]
 
-    await cog.removerole.callback(cog, interaction, member, role)
+    await cog.removerole.callback(cog, ctx, member, role)
 
     member.remove_roles.assert_called_once_with(role)
 
 
 @pytest.mark.asyncio
-async def test_removerole_usuario_sem_cargo(cog, interaction, member, role):
+async def test_removerole_usuario_sem_cargo(cog, ctx, member, role):
     member.roles = []
 
-    await cog.removerole.callback(cog, interaction, member, role)
+    await cog.removerole.callback(cog, ctx, member, role)
 
-    interaction.response.send_message.assert_called()
+    ctx.send.assert_called()
 
 
 # -----------------------
@@ -125,18 +102,18 @@ async def test_removerole_usuario_sem_cargo(cog, interaction, member, role):
 # -----------------------
 
 @pytest.mark.asyncio
-async def test_addrole_all_success(cog, interaction, role):
+async def test_addrole_all_success(cog, ctx, role):
     m1 = Mock(bot=False, roles=[])
     m1.add_roles = AsyncMock()
 
     m2 = Mock(bot=False, roles=[role])
 
-    interaction.guild.members = [m1, m2]
+    ctx.guild.members = [m1, m2]
 
-    await cog.addrole_all.callback(cog, interaction, role)
+    await cog.addrole_all.callback(cog, ctx, role)
 
     m1.add_roles.assert_called_once_with(role)
-    interaction.followup.send.assert_called()
+    ctx.send.assert_called()
 
 
 # -----------------------
@@ -144,15 +121,15 @@ async def test_addrole_all_success(cog, interaction, role):
 # -----------------------
 
 @pytest.mark.asyncio
-async def test_removerole_all_success(cog, interaction, role):
+async def test_removerole_all_success(cog, ctx, role):
     m1 = Mock(bot=False, roles=[role])
     m1.remove_roles = AsyncMock()
 
     m2 = Mock(bot=False, roles=[])
 
-    interaction.guild.members = [m1, m2]
+    ctx.guild.members = [m1, m2]
 
-    await cog.removerole_all.callback(cog, interaction, role)
+    await cog.removerole_all.callback(cog, ctx, role)
 
     m1.remove_roles.assert_called_once_with(role)
-    interaction.followup.send.assert_called()
+    ctx.send.assert_called()

@@ -2,6 +2,7 @@ from discord.ext import tasks
 import discord
 from discord import app_commands
 from discord.ext import commands
+from typing import Literal
 import json
 import os
 import time
@@ -334,28 +335,25 @@ class PremiumCog(commands.Cog):
             print(f"❌ Erro em premium_info: {e}")
             await interaction.followup.send("❌ Erro ao carregar informações!", ephemeral=True)
 
-    @app_commands.command(name="premium_remover", description="Remove plano premium de um usuário (ADM)")
-    @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.describe(usuario="Usuário que terá o plano removido")
-    async def premium_remover(self, interaction: discord.Interaction, usuario: discord.Member):
+    @commands.command(name="premium_remover")
+    @commands.has_permissions(administrator=True)
+    async def premium_remover(self, ctx: commands.Context, usuario: discord.Member):
         try:
-            await interaction.response.defer(ephemeral=True)
-            
             user_id = str(usuario.id)
             dados_usuarios = self.carregar_dados()
-            
+
             if user_id not in dados_usuarios:
-                await interaction.followup.send("❌ Usuário não encontrado no sistema!", ephemeral=True)
+                await ctx.send("❌ Usuário não encontrado no sistema!")
                 return
-            
+
             plano_anterior = dados_usuarios[user_id].get("premium")
             if not plano_anterior:
-                await interaction.followup.send("❌ Este usuário não possui plano premium!", ephemeral=True)
+                await ctx.send("❌ Este usuário não possui plano premium!")
                 return
-            
+
             dados_usuarios[user_id]["premium"] = None
             self.salvar_dados(dados_usuarios)
-            
+
             await self.enviar_embed_premium(usuario, plano_anterior, "removido")
             canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
             if canal_log:
@@ -365,70 +363,57 @@ class PremiumCog(commands.Cog):
                     color=0xff0000,
                     timestamp=discord.utils.utcnow()
                 )
-                embed_log.add_field(name="👤 Removido por", value=interaction.user.mention, inline=True)
+                embed_log.add_field(name="👤 Removido por", value=ctx.author.mention, inline=True)
                 embed_log.set_thumbnail(url=usuario.display_avatar.url)
                 embed_log.set_footer(text=f"ID: {usuario.id}")
                 await canal_log.send(embed=embed_log)
-            
-            await interaction.followup.send(
-                f"✅ Plano **{plano_anterior}** removido de {usuario.mention}",
-                ephemeral=True
-            )
-            
+
+            await ctx.send(f"✅ Plano **{plano_anterior}** removido de {usuario.mention}")
+
         except Exception as e:
             print(f"❌ Erro em premium_remover: {e}")
-            await interaction.followup.send("❌ Erro ao remover plano!", ephemeral=True)
-            
-    @app_commands.command(name="premium_adicionar", description="Adiciona plano premium a um usuário (ADM)")
-    @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.describe(
-        usuario="Usuário que receberá o plano",
-        plano="Plano premium a ser adicionado",
-        duracao_dias="Duração em dias (0 = permanente)"
-    )
-    @app_commands.choices(plano=[
-        app_commands.Choice(name="🟢 Aventureiro", value="aventureiro"),
-        app_commands.Choice(name="🟠 Lendário", value="lendario"), 
-        app_commands.Choice(name="🟣 Mítico", value="mitico"),
-        app_commands.Choice(name="❌ Remover Premium", value="none")
-    ])
-    async def premium_adicionar(self, interaction: discord.Interaction, usuario: discord.Member, plano: str, duracao_dias: int = 0):
+            await ctx.send("❌ Erro ao remover plano!")
+
+    @commands.command(name="premium_adicionar")
+    @commands.has_permissions(administrator=True)
+    async def premium_adicionar(
+        self,
+        ctx: commands.Context,
+        usuario: discord.Member,
+        plano: Literal["aventureiro", "lendario", "mitico", "none"],
+        duracao_dias: int = 0,
+    ):
         try:
-            await interaction.response.defer(ephemeral=True)
-            
             user_id = str(usuario.id)
             dados_usuarios = self.carregar_dados()
-            
+
             if user_id not in dados_usuarios:
-                await interaction.followup.send("❌ Usuário não encontrado no sistema!", ephemeral=True)
+                await ctx.send("❌ Usuário não encontrado no sistema!")
                 return
-            
+
             plano_anterior = dados_usuarios[user_id].get("premium")
-            
+
             if plano == "none":
                 if not plano_anterior:
-                    await interaction.followup.send("❌ Este usuário não possui plano premium!", ephemeral=True)
+                    await ctx.send("❌ Este usuário não possui plano premium!")
                     return
-                
+
                 dados_usuarios[user_id]["premium"] = None
                 if "premium_expiracao" in dados_usuarios[user_id]:
                     del dados_usuarios[user_id]["premium_expiracao"]
-                
+
                 self.salvar_dados(dados_usuarios)
-                
+
                 await self.enviar_embed_premium(usuario, plano_anterior, "removido")
-                
-                await interaction.followup.send(
-                    f"✅ Plano **{plano_anterior}** removido de {usuario.mention}",
-                    ephemeral=True
-                )
-                
+
+                await ctx.send(f"✅ Plano **{plano_anterior}** removido de {usuario.mention}")
+
             else:
                 plano_info = self.planos_info.get(plano)
                 if not plano_info:
-                    await interaction.followup.send("❌ Plano inválido!", ephemeral=True)
+                    await ctx.send("❌ Plano inválido!")
                     return
-                
+
                 if duracao_dias > 0:
                     expiracao = time.time() + (duracao_dias * 86400)
                     dados_usuarios[user_id]["premium_expiracao"] = expiracao
@@ -437,20 +422,20 @@ class PremiumCog(commands.Cog):
                 
                 dados_usuarios[user_id]["premium"] = plano
                 self.salvar_dados(dados_usuarios)
-                
+
                 acao = "ativado" if not plano_anterior else "atualizado"
                 embed_enviado = await self.enviar_embed_premium(usuario, plano, acao)
-                
+
                 mensagem = f"✅ Plano **{plano_info['nome']}** {acao} para {usuario.mention}"
                 if duracao_dias > 0:
                     mensagem += f"\n⏰ **Duração:** {duracao_dias} dias"
                 else:
                     mensagem += "\n⏰ **Duração:** Permanente"
-                
+
                 if plano_anterior:
                     mensagem += f"\n📊 **Plano anterior:** {plano_anterior}"
-                
-                await interaction.followup.send(mensagem, ephemeral=True)
+
+                await ctx.send(mensagem)
             
             canal_log = self.bot.get_channel(
                 self.bot.config.get("premium_log_channel_id") if self.bot.config else None
@@ -473,7 +458,7 @@ class PremiumCog(commands.Cog):
                     else:
                         embed_log.add_field(name="⏰ Duração", value="Permanente", inline=True)
                 
-                embed_log.add_field(name="👤 Executado por", value=interaction.user.mention, inline=True)
+                embed_log.add_field(name="👤 Executado por", value=ctx.author.mention, inline=True)
                 if plano_anterior and plano != "none":
                     embed_log.add_field(name="📊 Plano Anterior", value=plano_anterior, inline=True)
                 
@@ -483,7 +468,7 @@ class PremiumCog(commands.Cog):
                 
         except Exception as e:
             print(f"❌ Erro em premium_adicionar: {e}")
-            await interaction.followup.send("❌ Erro ao modificar plano!", ephemeral=True)
+            await ctx.send("❌ Erro ao modificar plano!")
             
 
 async def setup(bot: commands.Bot):

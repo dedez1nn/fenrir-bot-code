@@ -1,4 +1,3 @@
-from discord import app_commands
 import discord
 from discord.ext import commands
 
@@ -6,17 +5,12 @@ class ClearMessages(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="limpar", description="Apaga o número de mensagens desejado do canal")
-    @app_commands.describe(mensagens="Número de mensagens para apagar")
-    async def clear(self, interaction: discord.Interaction, mensagens: int):
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("❌ Você não tem permissão para usar esse comando!", ephemeral=True)
-            return
-        
-        await interaction.response.defer(ephemeral=True)
-        
-        deleted = await interaction.channel.purge(limit=mensagens)
-        await interaction.followup.send(f"✅ {len(deleted)} mensagens apagadas!", ephemeral=True)
+    @commands.command(name="limpar")
+    @commands.has_permissions(administrator=True)
+    async def clear(self, ctx: commands.Context, mensagens: int):
+        deleted = await ctx.channel.purge(limit=mensagens + 1)
+        aviso = await ctx.send(f"✅ {len(deleted) - 1} mensagens apagadas!")
+        await aviso.delete(delay=5)
 
 async def setup(bot):
     await bot.add_cog(ClearMessages(bot))
