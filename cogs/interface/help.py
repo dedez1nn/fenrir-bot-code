@@ -149,6 +149,7 @@ PAGES = [
             ("!status-mensagem <on|off>", "Liga/desliga o embed de status em on_ready (desligado por padrão) *(ADM)*"),
             ("!config-bot", "Wizard completo de configuração do bot *(ADM)*"),
             ("!config_status", "Diagnóstico de configuração *(ADM)*"),
+            ("!config-atual", "Lista todos os módulos (OK/faltando) + comando pra corrigir, paginado *(ADM)*"),
             ("!config-canais-log / !config-canais-embeds / !config-canais-sistemas", "Configuram canais do bot *(ADM)*"),
             ("!config-economia / !config-xp / !config-premium / !config-cargos", "Configuram parâmetros do bot *(ADM)*"),
             ("!emergencia", "Desativa Anti-Spam e Anti-Nuke imediatamente *(ADM)*"),
