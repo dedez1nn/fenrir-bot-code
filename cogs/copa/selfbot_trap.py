@@ -8,10 +8,9 @@ from collections import defaultdict, deque
 import discord
 from discord.ext import commands
 
-from services.db import (
+from repositories.server_channels import (
     get_all_selfbot_channels,
     get_all_selfbot_log_channels,
-    get_selfbot_channel,
     remove_selfbot_channel,
     remove_selfbot_log_channel,
     set_selfbot_channel,
@@ -36,9 +35,12 @@ class SelfbotTrapCog(commands.Cog):
         self.bot = bot
 
     async def cog_load(self) -> None:
+        if self.bot.db is None:
+            logger.warning("bot.db indisponível — armadilha de selfbot não carregada.")
+            return
         global _trap_channels, _log_channels
-        _trap_channels = await get_all_selfbot_channels()
-        _log_channels = await get_all_selfbot_log_channels()
+        _trap_channels = await get_all_selfbot_channels(self.bot.db)
+        _log_channels = await get_all_selfbot_log_channels(self.bot.db)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
@@ -153,12 +155,16 @@ class SelfbotTrapCog(commands.Cog):
         canal: discord.TextChannel,
         canal_log: discord.TextChannel | None = None,
     ) -> None:
+        if self.bot.db is None:
+            await ctx.send("❌ Banco de dados não disponível.")
+            return
+
         guild_id = ctx.guild.id
-        await set_selfbot_channel(guild_id, canal.id)
+        await set_selfbot_channel(self.bot.db, guild_id, canal.id)
         _trap_channels[guild_id] = canal.id
 
         if canal_log:
-            await set_selfbot_log_channel(guild_id, canal_log.id)
+            await set_selfbot_log_channel(self.bot.db, guild_id, canal_log.id)
             _log_channels[guild_id] = canal_log.id
 
         embed = discord.Embed(title="🚨 Armadilha de Selfbot Configurada", color=0xFF4444)
@@ -182,9 +188,13 @@ class SelfbotTrapCog(commands.Cog):
     @commands.command(name="selfbot-remover")
     @commands.has_permissions(administrator=True)
     async def cmd_selfbot_remover(self, ctx: commands.Context) -> None:
+        if self.bot.db is None:
+            await ctx.send("❌ Banco de dados não disponível.")
+            return
+
         guild_id = ctx.guild.id
-        await remove_selfbot_channel(guild_id)
-        await remove_selfbot_log_channel(guild_id)
+        await remove_selfbot_channel(self.bot.db, guild_id)
+        await remove_selfbot_log_channel(self.bot.db, guild_id)
         _trap_channels.pop(guild_id, None)
         _log_channels.pop(guild_id, None)
         await ctx.send("✅ Armadilha de selfbot e canal de log removidos.")

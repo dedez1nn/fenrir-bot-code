@@ -282,20 +282,6 @@ class FenrirBot(commands.Bot):
         )
         return True
 
-    async def _init_copa_db(self) -> None:
-        """Inicializa o MongoDB usado pelas cogs da Copa 2026 (cogs/copa/).
-
-        Tolerante a falha, no mesmo espírito de `_init_database()`: se o Mongo
-        estiver indisponível, loga aviso e segue. As cogs da Copa checam o
-        estado internamente (gate/canais) e degradam sem derrubar o bot.
-        """
-        try:
-            from services.db import init_db as init_copa_db
-            await init_copa_db()
-            log.info("MongoDB (Copa 2026) conectado.")
-        except Exception as exc:
-            log.warning("MongoDB (Copa 2026) indisponível: %s — cogs da Copa podem degradar.", exc)
-
     async def _safe_load_extension(self, module: str) -> None:
         """Carrega uma extensão isolando falhas.
 
@@ -309,7 +295,6 @@ class FenrirBot(commands.Bot):
 
     async def setup_hook(self):
         await self._init_database()
-        await self._init_copa_db()
 
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
         COGS_DIR = os.path.join(BASE_DIR, "cogs")

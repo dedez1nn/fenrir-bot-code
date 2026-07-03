@@ -17,7 +17,7 @@ from services import copa as copa_svc
 from services import copa_monitor as monitor
 from services import gate
 from services import youtube
-from services.db import get_all_copa_channels, get_copa_channel, set_copa_channel
+from repositories.server_channels import get_all_copa_channels, get_copa_channel, set_copa_channel
 
 logger = logging.getLogger(__name__)
 
@@ -213,7 +213,10 @@ class CopaCog(commands.Cog):
         self._eod_sent_dates: set[str] = set()
 
     async def cog_load(self) -> None:
-        self._monitor_channels = await get_all_copa_channels()
+        if self.bot.db is not None:
+            self._monitor_channels = await get_all_copa_channels(self.bot.db)
+        else:
+            logger.warning("bot.db indisponível — canais de notificação da Copa não carregados.")
         self._monitor_loop.start()
 
     async def cog_unload(self) -> None:
@@ -563,13 +566,17 @@ class CopaCog(commands.Cog):
     async def cmd_config_copa(
         self, ctx: commands.Context, canal: discord.TextChannel | None = None
     ) -> None:
+        if self.bot.db is None:
+            await ctx.send("❌ Banco de dados não disponível.")
+            return
+
         guild_id = ctx.guild.id
 
         if canal:
-            await set_copa_channel(guild_id, canal.id)
-            self._monitor_channels = await get_all_copa_channels()
+            await set_copa_channel(self.bot.db, guild_id, canal.id)
+            self._monitor_channels = await get_all_copa_channels(self.bot.db)
 
-        channel_id = await get_copa_channel(guild_id)
+        channel_id = await get_copa_channel(self.bot.db, guild_id)
         ch = ctx.guild.get_channel(channel_id) if channel_id else None
         canal_str = ch.mention if ch else "❌ Não configurado"
 

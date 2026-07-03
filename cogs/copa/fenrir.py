@@ -6,9 +6,8 @@ import discord
 from discord.ext import commands
 
 from services import gate
-from services.db import (
+from repositories.server_channels import (
     get_all_command_channels,
-    get_command_channel,
     remove_command_channel,
     set_command_channel,
 )
@@ -21,7 +20,10 @@ class FenrirCog(commands.Cog):
         self.bot = bot
 
     async def cog_load(self) -> None:
-        channels = await get_all_command_channels()
+        if self.bot.db is None:
+            logger.warning("bot.db indisponível — gate de canal não carregado.")
+            return
+        channels = await get_all_command_channels(self.bot.db)
         gate.load(channels)
         logger.info("Gate de canal carregado: %d guild(s) configurada(s)", len(channels))
 
@@ -30,10 +32,14 @@ class FenrirCog(commands.Cog):
     async def cmd_canal_fenrir(
         self, ctx: commands.Context, canal: discord.TextChannel | None = None
     ) -> None:
+        if self.bot.db is None:
+            await ctx.send("❌ Banco de dados não disponível.")
+            return
+
         guild_id = ctx.guild.id
 
         if canal:
-            await set_command_channel(guild_id, canal.id)
+            await set_command_channel(self.bot.db, guild_id, canal.id)
             gate.set_channel(guild_id, canal.id)
             embed = discord.Embed(
                 title="✅ Canal de comandos configurado",
@@ -41,7 +47,7 @@ class FenrirCog(commands.Cog):
                 color=0x3B82F6,
             )
         else:
-            await remove_command_channel(guild_id)
+            await remove_command_channel(self.bot.db, guild_id)
             gate.remove_channel(guild_id)
             embed = discord.Embed(
                 title="✅ Restrição removida",
