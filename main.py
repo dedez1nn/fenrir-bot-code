@@ -185,6 +185,9 @@ class FenrirBot(commands.Bot):
         elif kind == "config":
             await self.reload_config()
             await self._check_config_health()
+            xp_cog = self.get_cog("XPCog")
+            if xp_cog and hasattr(xp_cog, "_carregar_cargos_por_nivel"):
+                xp_cog.cargos_por_nivel = xp_cog._carregar_cargos_por_nivel()
 
         elif kind == "antispam":
             cog = self.get_cog("AntiSpam")

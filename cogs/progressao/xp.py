@@ -333,20 +333,23 @@ class XPCog(commands.Cog):
         self.coins_por_vitoria = 20000
         self.bonus_coins_por_nivel = 50000
 
+        self.voice_xp_require_undeafened = True
+        self.voice_xp_min_members = 1
+        self.xp_message_min_chars = 0
+
         self.dobro_xp_ativos = {}
         self.blacklisted_channel_ids: set = set()
 
-        _default_roles: dict = {}
-        _cfg = getattr(bot, "config", None)
-        _role_map = (_cfg.get("levelup_role_map") or {}) if _cfg else {}
-        self.cargos_por_nivel = (
-            {int(k): int(v) for k, v in _role_map.items()}
-            if _role_map else _default_roles
-        )
+        self.cargos_por_nivel = self._carregar_cargos_por_nivel()
 
         self._restaurar_dobro_xp()
         self.voice_check_task = self.bot.loop.create_task(self.voice_xp_loop())
         self.dobro_xp_check_task = self.bot.loop.create_task(self.dobro_xp_loop())
+
+    def _carregar_cargos_por_nivel(self) -> dict:
+        cfg = getattr(self.bot, "config", None)
+        role_map = (cfg.get("levelup_role_map") or {}) if cfg else {}
+        return {int(k): int(v) for k, v in role_map.items()} if role_map else {}
 
     async def cog_load(self):
         self.use_db = self.bot.db is not None
@@ -374,6 +377,16 @@ class XPCog(commands.Cog):
             self.coins_por_vitoria     = self.bot.config.get("coins_por_vitoria")     or self.coins_por_vitoria
             self.cooldown_segundos     = self.bot.config.get("xp_message_cooldown_s") or self.cooldown_segundos
 
+            _require_undeafened = self.bot.config.get("voice_xp_require_undeafened")
+            self.voice_xp_require_undeafened = (
+                self.voice_xp_require_undeafened if _require_undeafened is None else bool(_require_undeafened)
+            )
+            self.voice_xp_min_members = self.bot.config.get("voice_xp_min_members") or self.voice_xp_min_members
+            _min_chars = self.bot.config.get("xp_message_min_chars")
+            self.xp_message_min_chars = self.xp_message_min_chars if _min_chars is None else _min_chars
+
+        self.cargos_por_nivel = self._carregar_cargos_por_nivel()
+
         if self.bot.db is not None:
             cfg = getattr(self.bot, "config", None)
             guild_id = (cfg.get("guild_id") if cfg else None)
@@ -399,6 +412,7 @@ class XPCog(commands.Cog):
                 self.feature_enabled = await is_feature_enabled(self.bot.db, guild_id, "xp")
                 feat_cfg = await get_feature_config(self.bot.db, guild_id, "xp")
                 self.blacklisted_channel_ids = set(feat_cfg.get("blacklisted_channel_ids", []))
+        self.cargos_por_nivel = self._carregar_cargos_por_nivel()
         from db.feature_config import validate_and_save_for_cog
         await validate_and_save_for_cog(self.bot, "xp", self)
 
@@ -611,8 +625,12 @@ class XPCog(commands.Cog):
         multiplicador_guild = 1.0
 
         if guild_cog and "guild" in dados and dados["guild"]:
-            multiplicador_guild = guild_cog.calcular_multiplicador_guild(dados["guild"])
-            print(f"   Multiplicador Guild: {multiplicador_guild}x")
+            try:
+                multiplicador_guild = await guild_cog.calcular_multiplicador_guild(dados["guild"])
+                print(f"   Multiplicador Guild: {multiplicador_guild}x")
+            except Exception as e:
+                print(f"❌ Erro ao calcular multiplicador de guild: {e}")
+                multiplicador_guild = 1.0
         else:
             print(f"   ❌ Sem guild ou GuildSystem não carregado")
 
@@ -733,18 +751,11 @@ class XPCog(commands.Cog):
             cargos_para_adicionar = []
             cargos_para_remover = []
 
-            cargo_atual = None
-            nivel_atual = 0
-
             for nivel_requerido, cargo_id in self.cargos_por_nivel.items():
                 cargo = member.guild.get_role(cargo_id)
                 if not cargo:
                     print(f"❌ Cargo com ID {cargo_id} não encontrado no servidor")
                     continue
-
-                if cargo in member.roles and nivel_requerido > nivel_atual:
-                    cargo_atual = cargo
-                    nivel_atual = nivel_requerido
 
                 if nivel >= nivel_requerido:
                     if cargo not in member.roles:
@@ -907,6 +918,7 @@ class XPCog(commands.Cog):
                 usuarios_que_ganharam = []
                 for user_id, data in self.voice_users.items():
                     guild = self.bot.get_guild(self.bot.config.guild_id if self.bot.config else 0)
+                    member = None
                     if guild:
                         member = guild.get_member(int(user_id))
                         if member and member.voice and member.voice.channel:
@@ -917,6 +929,14 @@ class XPCog(commands.Cog):
                     last_xp_time = data.get("last_xp_time", join_time)
 
                     if agora - last_xp_time >= self.voice_xp_interval:
+                        if member and member.voice:
+                            if self.voice_xp_require_undeafened and (member.voice.self_deaf or member.voice.deaf):
+                                continue
+                            if self.voice_xp_min_members > 1 and member.voice.channel:
+                                membros_ativos = [m for m in member.voice.channel.members if not m.bot]
+                                if len(membros_ativos) < self.voice_xp_min_members:
+                                    continue
+
                         self.voice_users[user_id]["last_xp_time"] = agora
 
                         user = self.bot.get_user(int(user_id))
@@ -927,19 +947,20 @@ class XPCog(commands.Cog):
 
                 if usuarios_que_ganharam:
                     canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
-                    descricao_lines = []
-                    for user, xp_ganho, xp_total in usuarios_que_ganharam:
-                        status_dobro = " (DOBRO DE XP!)" if self.verificar_dobro_xp(user.id) else ""
-                        descricao_lines.append(f"• {user.mention} ganhou {xp_ganho} XP{status_dobro} | Total: {xp_total} XP")
+                    if canal_log:
+                        descricao_lines = []
+                        for user, xp_ganho, xp_total in usuarios_que_ganharam:
+                            status_dobro = " (DOBRO DE XP!)" if self.verificar_dobro_xp(user.id) else ""
+                            descricao_lines.append(f"• {user.mention} ganhou {xp_ganho} XP{status_dobro} | Total: {xp_total} XP")
 
-                    embed_log = discord.Embed(
-                        title="🌟 Ganho de Experiência por Voz",
-                        description="\n".join(descricao_lines),
-                        color=discord.Color.dark_red(),
-                        timestamp=discord.utils.utcnow()
-                    )
-                    embed_log.set_thumbnail(url=self.bot.user.display_avatar.url)
-                    await canal_log.send(embed=embed_log)
+                        embed_log = discord.Embed(
+                            title="🌟 Ganho de Experiência por Voz",
+                            description="\n".join(descricao_lines),
+                            color=discord.Color.dark_red(),
+                            timestamp=discord.utils.utcnow()
+                        )
+                        embed_log.set_thumbnail(url=self.bot.user.display_avatar.url)
+                        await canal_log.send(embed=embed_log)
 
                 await asyncio.sleep(30)
             except Exception as e:
@@ -1020,6 +1041,8 @@ class XPCog(commands.Cog):
             return
         if message.channel.id in self.blacklisted_channel_ids:
             return
+        if self.xp_message_min_chars > 0 and len(message.content.strip()) < self.xp_message_min_chars:
+            return
 
         user_id = str(message.author.id)
         agora = time.time()
@@ -1033,21 +1056,22 @@ class XPCog(commands.Cog):
 
         canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
 
-        status_dobro = " (DOBRO DE XP ATIVO!)" if self.verificar_dobro_xp(message.author.id) else ""
+        if canal_log:
+            status_dobro = " (DOBRO DE XP ATIVO!)" if self.verificar_dobro_xp(message.author.id) else ""
 
-        embed_log = discord.Embed(
-            title="🌟 Ganho de Experiência",
-            description=(
-                f"**O membro {message.author.mention} ganhou XP{status_dobro}**\n"
-                f"**Base:** {self.xp_por_mensagem} XP | **Motivo:** Mensagem no chat\n"
-                f"**Novo XP:** {self.user_data[user_id]['xp']}"
-            ),
-            color=discord.Color.dark_red(),
-            timestamp=discord.utils.utcnow()
-        )
-        embed_log.set_thumbnail(url=message.author.display_avatar.url)
-        embed_log.set_footer(text=f"ID: {message.author.id}")
-        await canal_log.send(embed=embed_log)
+            embed_log = discord.Embed(
+                title="🌟 Ganho de Experiência",
+                description=(
+                    f"**O membro {message.author.mention} ganhou XP{status_dobro}**\n"
+                    f"**Base:** {self.xp_por_mensagem} XP | **Motivo:** Mensagem no chat\n"
+                    f"**Novo XP:** {self.user_data[user_id]['xp']}"
+                ),
+                color=discord.Color.dark_red(),
+                timestamp=discord.utils.utcnow()
+            )
+            embed_log.set_thumbnail(url=message.author.display_avatar.url)
+            embed_log.set_footer(text=f"ID: {message.author.id}")
+            await canal_log.send(embed=embed_log)
 
     @app_commands.command(name="xp", description="Mostra o seu XP.")
     async def xp(self, interaction: discord.Interaction, membro: discord.Member = None):
@@ -1156,7 +1180,11 @@ class XPCog(commands.Cog):
                     multiplicador_guild = 1.0
                     dados_user = self.user_data.get(user_id, {})
                     if guild_cog and dados_user.get("guild"):
-                        multiplicador_guild = guild_cog.calcular_multiplicador_guild(dados_user["guild"])
+                        try:
+                            multiplicador_guild = await guild_cog.calcular_multiplicador_guild(dados_user["guild"])
+                        except Exception as e:
+                            print(f"❌ Erro ao calcular multiplicador de guild: {e}")
+                            multiplicador_guild = 1.0
                     multiplicador_total = 1 + (multiplicador_guild - 1) + (multiplicador_xp_premium - 1) + 1
 
                     embed.description = (
@@ -1288,11 +1316,7 @@ class XPCog(commands.Cog):
                 try:
                     membro = ctx.guild.get_member(int(user_id))
                     if membro:
-                        for nivel_requerido, cargo_id in self.cargos_por_nivel.items():
-                            if dados["nivel"] >= nivel_requerido:
-                                cargo = ctx.guild.get_role(cargo_id)
-                                if cargo and cargo in membro.roles:
-                                    await membro.remove_roles(cargo, reason="Reset total de XP")
+                        await self.atualizar_cargos(membro, 1)
                 except Exception as e:
                     print(f"Erro ao processar membro {user_id}: {e}")
 
@@ -1331,7 +1355,6 @@ class XPCog(commands.Cog):
         try:
             user_id = str(membro.id)
             if user_id in self.user_data:
-                nivel_antes = self.user_data[user_id]["nivel"]
                 self.user_data[user_id]["xp"] = 0
                 self.user_data[user_id]["nivel"] = 1
 
@@ -1345,11 +1368,7 @@ class XPCog(commands.Cog):
 
                 await ctx.send(f"✅ XP de {membro.mention} foi zerado!")
 
-                for nivel_requerido, cargo_id in self.cargos_por_nivel.items():
-                    if nivel_antes >= nivel_requerido:
-                        cargo = ctx.guild.get_role(cargo_id)
-                        if cargo and cargo in membro.roles:
-                            await membro.remove_roles(cargo, reason="Reset de XP")
+                await self.atualizar_cargos(membro, 1)
 
                 canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
                 embed_log = discord.Embed(
@@ -1470,11 +1489,31 @@ class XPCog(commands.Cog):
             self.voice_xp_interval = intervalo * 60
             self.voice_xp_amount = xp_quantidade
 
+            aviso_persistencia = ""
+            if self.use_db and self.bot.db is not None:
+                try:
+                    async with self.bot.db.acquire() as conn:
+                        await conn.execute(
+                            "UPDATE server_config SET xp_por_voz = $2, voice_xp_interval_s = $3, updated_at = NOW() WHERE guild_id = $1",
+                            ctx.guild.id,
+                            xp_quantidade,
+                            self.voice_xp_interval,
+                        )
+                        await conn.execute(
+                            "SELECT pg_notify('fenrir_cache', $1)", f"config:{ctx.guild.id}"
+                        )
+                except Exception as e:
+                    print(f"❌ Erro ao persistir config_voz no banco: {e}")
+                    aviso_persistencia = "\n⚠️ Não foi possível persistir no banco — valor aplicado só nesta sessão."
+            else:
+                aviso_persistencia = "\n⚠️ Sem banco de dados ativo — valor aplicado só nesta sessão (some no próximo restart)."
+
             await ctx.send(
                 f"✅ **Configuração de XP por voz atualizada!**\n"
                 f"**Intervalo:** {intervalo} minutos\n"
                 f"**XP ganho:** {xp_quantidade} pontos\n"
                 f"**Usuários ativos em voz:** {len(self.voice_users)}"
+                f"{aviso_persistencia}"
             )
 
         except Exception as e:

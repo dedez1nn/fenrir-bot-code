@@ -100,6 +100,23 @@ def validate_xp(cfg: Dict[str, Any]) -> List[Dict[str, str]]:
                 "suggestion": "Use somente inteiros positivos como níveis e IDs de cargo.",
             })
             break
+
+    if cfg.get("voice_xp_min_members", 1) < 1:
+        errors.append({
+            "code": "CONFIG_INVALID_VOICE_MIN_MEMBERS",
+            "field": "voice_xp_min_members",
+            "message": "voice_xp_min_members deve ser >= 1.",
+            "suggestion": "Use 1 para não exigir acompanhantes, ou um valor maior para reforçar contra farm solo.",
+        })
+
+    if cfg.get("xp_message_min_chars", 0) < 0:
+        errors.append({
+            "code": "CONFIG_INVALID_MESSAGE_MIN_CHARS",
+            "field": "xp_message_min_chars",
+            "message": "xp_message_min_chars deve ser >= 0.",
+            "suggestion": "Use 0 para desabilitar a exigência de tamanho mínimo.",
+        })
+
     return errors
 
 

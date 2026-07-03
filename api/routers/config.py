@@ -45,6 +45,9 @@ _ALLOWED_PATCH_FIELDS = {
     "xp_por_voz",
     "voice_xp_interval_s",
     "bonus_coins_por_nivel",
+    "voice_xp_require_undeafened",
+    "voice_xp_min_members",
+    "xp_message_min_chars",
     # Fase 0: cooldowns e XP de vitória
     "xp_por_vitoria",
     "coins_por_vitoria",
