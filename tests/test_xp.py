@@ -12,6 +12,7 @@ def bot():
     bot = Mock(spec=commands.Bot)
     bot.db = None
     bot.config = None
+    bot.command_prefix = "!"
     bot.get_cog = Mock(return_value=None)
     bot.get_channel = Mock(return_value=None)
     bot.get_user = Mock(return_value=None)
@@ -154,6 +155,24 @@ class TestOnMessage:
         await xp_cog.on_message(message)
 
         xp_cog.adicionar_xp.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_ignora_mensagem_de_comando_com_exclamacao(self, xp_cog):
+        xp_cog.adicionar_xp = AsyncMock()
+        message = self._message("!xp")
+
+        await xp_cog.on_message(message)
+
+        xp_cog.adicionar_xp.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_ignora_mensagem_de_comando_com_barra(self, xp_cog):
+        xp_cog.adicionar_xp = AsyncMock()
+        message = self._message("/xp")
+
+        await xp_cog.on_message(message)
+
+        xp_cog.adicionar_xp.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_respeita_min_chars_bloqueia_mensagem_curta(self, xp_cog):

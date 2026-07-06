@@ -1123,6 +1123,9 @@ class XPCog(commands.Cog):
             return
         if message.channel.id in self.blacklisted_channel_ids:
             return
+        prefixo = self.bot.command_prefix if isinstance(self.bot.command_prefix, str) else "!"
+        if message.content.startswith((prefixo, "/")):
+            return
         if self.xp_message_min_chars > 0 and len(message.content.strip()) < self.xp_message_min_chars:
             return
 
