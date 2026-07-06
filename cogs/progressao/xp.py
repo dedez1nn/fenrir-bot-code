@@ -1,7 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from typing import Literal
+from typing import Literal, Optional
 import json
 import os
 import time
@@ -12,6 +12,49 @@ import requests
 import asyncio
 
 from repositories import users as users_repo
+
+
+class ConfirmView(discord.ui.View):
+    """Botões de Confirmar/Cancelar para ações destrutivas (ex.: reset de XP)."""
+
+    def __init__(self, autor_id: int, timeout: float = 30):
+        super().__init__(timeout=timeout)
+        self.autor_id = autor_id
+        self.confirmado: Optional[bool] = None
+        self.message: Optional[discord.Message] = None
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.autor_id:
+            await interaction.response.send_message(
+                "❌ Só quem executou o comando pode confirmar ou cancelar.", ephemeral=True
+            )
+            return False
+        return True
+
+    async def _finalizar(self, interaction: discord.Interaction, confirmado: bool):
+        self.confirmado = confirmado
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(view=self)
+        self.stop()
+
+    @discord.ui.button(label="✅ Confirmar", style=discord.ButtonStyle.danger)
+    async def confirmar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._finalizar(interaction, True)
+
+    @discord.ui.button(label="❌ Cancelar", style=discord.ButtonStyle.secondary)
+    async def cancelar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._finalizar(interaction, False)
+
+    async def on_timeout(self):
+        self.confirmado = False
+        if self.message:
+            for item in self.children:
+                item.disabled = True
+            try:
+                await self.message.edit(view=self)
+            except Exception:
+                pass
 
 
 class RankingView(discord.ui.View):
@@ -347,9 +390,48 @@ class XPCog(commands.Cog):
         self.dobro_xp_check_task = self.bot.loop.create_task(self.dobro_xp_loop())
 
     def _carregar_cargos_por_nivel(self) -> dict:
+        """Carrega o mapa cargo_id -> {"min": nivel, "max": nivel|None} de bot.config.
+
+        `levelup_role_map` é uma lista de faixas: [{"cargo_id":.., "min":.., "max":..}].
+        `max` é apenas informativo (documenta até onde vai a faixa) — a posse do
+        cargo é cumulativa e definida só pelo `min` (nivel >= min), igual ao
+        comportamento anterior, então subir de nível nunca remove um cargo já
+        conquistado.
+        """
         cfg = getattr(self.bot, "config", None)
-        role_map = (cfg.get("levelup_role_map") or {}) if cfg else {}
-        return {int(k): int(v) for k, v in role_map.items()} if role_map else {}
+        role_ranges = (cfg.get("levelup_role_map") or []) if cfg else []
+        resultado = {}
+        for entrada in role_ranges:
+            try:
+                cargo_id = int(entrada["cargo_id"])
+                nivel_min = int(entrada["min"])
+                nivel_max = entrada.get("max")
+                nivel_max = int(nivel_max) if nivel_max is not None else None
+                resultado[cargo_id] = {"min": nivel_min, "max": nivel_max}
+            except (KeyError, TypeError, ValueError):
+                continue
+        return resultado
+
+    async def _persistir_cargos_por_nivel(self, guild_id: int) -> bool:
+        """Persiste self.cargos_por_nivel em server_config.levelup_role_map e notifica outros processos."""
+        if self.bot.db is None:
+            return False
+        role_list = [
+            {"cargo_id": cargo_id, "min": faixa["min"], "max": faixa["max"]}
+            for cargo_id, faixa in sorted(self.cargos_por_nivel.items(), key=lambda kv: kv[1]["min"])
+        ]
+        try:
+            async with self.bot.db.acquire() as conn:
+                await conn.execute(
+                    "UPDATE server_config SET levelup_role_map = $2::jsonb, updated_at = NOW() WHERE guild_id = $1",
+                    guild_id,
+                    json.dumps(role_list),
+                )
+                await conn.execute("SELECT pg_notify('fenrir_cache', $1)", f"config:{guild_id}")
+            return True
+        except Exception as e:
+            print(f"❌ Erro ao persistir levelup_role_map: {e}")
+            return False
 
     async def cog_load(self):
         self.use_db = self.bot.db is not None
@@ -751,13 +833,13 @@ class XPCog(commands.Cog):
             cargos_para_adicionar = []
             cargos_para_remover = []
 
-            for nivel_requerido, cargo_id in self.cargos_por_nivel.items():
+            for cargo_id, faixa in self.cargos_por_nivel.items():
                 cargo = member.guild.get_role(cargo_id)
                 if not cargo:
                     print(f"❌ Cargo com ID {cargo_id} não encontrado no servidor")
                     continue
 
-                if nivel >= nivel_requerido:
+                if nivel >= faixa["min"]:
                     if cargo not in member.roles:
                         cargos_para_adicionar.append(cargo)
                         print(f"✅ Marcado para adicionar: {cargo.name}")
@@ -1308,10 +1390,97 @@ class XPCog(commands.Cog):
             print(f"Erro no comando set_premium: {e}")
             await ctx.send("❌ Ocorreu um erro ao processar o comando.")
 
+    @commands.command(name="add-cargo-nivel")
+    @commands.has_permissions(administrator=True)
+    async def add_cargo_nivel(self, ctx: commands.Context, cargo: discord.Role, nivel_min: int, nivel_max: int):
+        try:
+            if nivel_min < 0 or nivel_max < nivel_min:
+                await ctx.send("❌ O nível mínimo deve ser >= 0 e o nível máximo deve ser >= ao mínimo.")
+                return
+
+            self.cargos_por_nivel[cargo.id] = {"min": nivel_min, "max": nivel_max}
+
+            persistido = await self._persistir_cargos_por_nivel(ctx.guild.id) if ctx.guild else False
+            aviso = "" if persistido else (
+                "\n⚠️ Sem banco de dados ativo — configuração aplicada só nesta sessão (some no próximo restart)."
+            )
+
+            await ctx.send(
+                f"✅ **Cargo por nível configurado!**\n"
+                f"**Cargo:** {cargo.mention}\n"
+                f"**Faixa de nível:** {nivel_min} até {nivel_max}"
+                f"{aviso}"
+            )
+
+        except Exception as e:
+            print(f"Erro no comando add-cargo-nivel: {e}")
+            await ctx.send("❌ Ocorreu um erro ao processar o comando.")
+
+    @commands.command(name="remover-cargo-nivel")
+    @commands.has_permissions(administrator=True)
+    async def remover_cargo_nivel(self, ctx: commands.Context, cargo: discord.Role):
+        try:
+            if cargo.id not in self.cargos_por_nivel:
+                await ctx.send(f"❌ O cargo {cargo.mention} não está configurado no sistema de níveis.")
+                return
+
+            del self.cargos_por_nivel[cargo.id]
+
+            persistido = await self._persistir_cargos_por_nivel(ctx.guild.id) if ctx.guild else False
+            aviso = "" if persistido else (
+                "\n⚠️ Sem banco de dados ativo — configuração aplicada só nesta sessão (some no próximo restart)."
+            )
+
+            await ctx.send(f"✅ Cargo {cargo.mention} removido do sistema de níveis.{aviso}")
+
+        except Exception as e:
+            print(f"Erro no comando remover-cargo-nivel: {e}")
+            await ctx.send("❌ Ocorreu um erro ao processar o comando.")
+
+    @commands.command(name="listar-cargos-nivel")
+    @commands.has_permissions(administrator=True)
+    async def listar_cargos_nivel(self, ctx: commands.Context):
+        try:
+            if not self.cargos_por_nivel:
+                await ctx.send("Nenhum cargo por nível configurado.")
+                return
+
+            linhas = []
+            for cargo_id, faixa in sorted(self.cargos_por_nivel.items(), key=lambda kv: kv[1]["min"]):
+                cargo = ctx.guild.get_role(cargo_id) if ctx.guild else None
+                nome_cargo = cargo.mention if cargo else f"`{cargo_id}` (cargo não encontrado no servidor)"
+                max_texto = faixa["max"] if faixa["max"] is not None else "∞"
+                linhas.append(f"• {nome_cargo} — nível **{faixa['min']}** até **{max_texto}**")
+
+            embed = discord.Embed(
+                title="🏅 Cargos por Nível Configurados",
+                description="\n".join(linhas),
+                color=discord.Color.blue(),
+            )
+            await ctx.send(embed=embed)
+
+        except Exception as e:
+            print(f"Erro no comando listar-cargos-nivel: {e}")
+            await ctx.send("❌ Ocorreu um erro ao processar o comando.")
+
     @commands.command(name="reset-xp-all")
     @commands.has_permissions(administrator=True)
     async def reset_xp_all(self, ctx: commands.Context):
         try:
+            total_usuarios = len(self.user_data)
+            view = ConfirmView(ctx.author.id)
+            confirm_msg = await ctx.send(
+                f"⚠️ **Tem certeza que deseja zerar o XP de TODOS os {total_usuarios} membros registrados?**\n"
+                "Essa ação **não pode ser desfeita**.",
+                view=view,
+            )
+            view.message = confirm_msg
+            await view.wait()
+
+            if not view.confirmado:
+                await confirm_msg.edit(content="❌ Reset de XP geral **cancelado**.", view=view)
+                return
+
             for user_id, dados in self.user_data.items():
                 try:
                     membro = ctx.guild.get_member(int(user_id))
@@ -1355,6 +1524,19 @@ class XPCog(commands.Cog):
         try:
             user_id = str(membro.id)
             if user_id in self.user_data:
+                view = ConfirmView(ctx.author.id)
+                confirm_msg = await ctx.send(
+                    f"⚠️ **Tem certeza que deseja zerar o XP de {membro.mention}?**\n"
+                    "Essa ação **não pode ser desfeita**.",
+                    view=view,
+                )
+                view.message = confirm_msg
+                await view.wait()
+
+                if not view.confirmado:
+                    await confirm_msg.edit(content=f"❌ Reset de XP de {membro.mention} **cancelado**.", view=view)
+                    return
+
                 self.user_data[user_id]["xp"] = 0
                 self.user_data[user_id]["nivel"] = 1
 

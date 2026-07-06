@@ -86,18 +86,21 @@ def validate_premium(cfg: Dict[str, Any]) -> List[Dict[str, str]]:
 
 def validate_xp(cfg: Dict[str, Any]) -> List[Dict[str, str]]:
     errors = []
-    role_map = cfg.get("levelup_role_map") or {}
-    for k, v in role_map.items():
+    role_ranges = cfg.get("levelup_role_map") or []
+    for entrada in role_ranges:
         try:
-            nivel = int(k)
-            if nivel <= 0 or not isinstance(v, int) or v <= 0:
+            cargo_id = int(entrada["cargo_id"])
+            nivel_min = int(entrada["min"])
+            nivel_max = entrada.get("max")
+            nivel_max = int(nivel_max) if nivel_max is not None else None
+            if cargo_id <= 0 or nivel_min < 0 or (nivel_max is not None and nivel_max < nivel_min):
                 raise ValueError
-        except (ValueError, TypeError):
+        except (KeyError, TypeError, ValueError):
             errors.append({
                 "code": "CONFIG_INVALID_ROLE_MAP",
                 "field": "levelup_role_map",
-                "message": f"Entrada inválida no mapa de cargos por nível: '{k}'.",
-                "suggestion": "Use somente inteiros positivos como níveis e IDs de cargo.",
+                "message": f"Entrada inválida no mapa de cargos por nível: {entrada!r}.",
+                "suggestion": "Cada entrada precisa de cargo_id e min inteiros positivos, e max >= min (ou nulo).",
             })
             break
 

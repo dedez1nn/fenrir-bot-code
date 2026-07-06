@@ -18,7 +18,7 @@ _FEATURE_COMMANDS: dict[str, str] = {
     "member_logs": "!config-canais-embeds",
     "colors": "!config-cargos",
     "premium": "Defina ACCESS_TOKEN no `.env` (Mercado Pago) — não é um comando !",
-    "xp": "⚠️ Sem comando ! hoje — levelup_role_map só via painel administrativo (API)",
+    "xp": "!add-cargo-nivel / !remover-cargo-nivel / !listar-cargos-nivel",
     "adventures": "!config-canais-sistemas",
     "guild_raids": "!config-canais-sistemas",
     "antispam": "!antispam_toggle / !antispam_canal_log / !antispam_threshold",

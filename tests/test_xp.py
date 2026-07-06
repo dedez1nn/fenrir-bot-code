@@ -77,7 +77,7 @@ class TestAtualizarCargos:
     async def test_atualizar_cargos_adiciona_e_remove_por_nivel(self, xp_cog):
         role_nivel_2 = Mock(name="CargoNivel2")
         role_nivel_5 = Mock(name="CargoNivel5")
-        xp_cog.cargos_por_nivel = {2: 111, 5: 222}
+        xp_cog.cargos_por_nivel = {111: {"min": 2, "max": 4}, 222: {"min": 5, "max": None}}
 
         member = Mock()
         member.guild.get_role = Mock(side_effect=lambda rid: {111: role_nivel_2, 222: role_nivel_5}.get(rid))
@@ -96,7 +96,7 @@ class TestAtualizarCargos:
 
     @pytest.mark.asyncio
     async def test_atualizar_cargos_ignora_cargo_inexistente_no_servidor(self, xp_cog):
-        xp_cog.cargos_por_nivel = {2: 999}
+        xp_cog.cargos_por_nivel = {999: {"min": 2, "max": None}}
         member = Mock()
         member.guild.get_role = Mock(return_value=None)  # cargo não existe mais na guild
         member.roles = []
@@ -113,15 +113,21 @@ class TestReloadCargosPorNivel:
     """Cobre a regressão do bug P0.2: cargos_por_nivel nunca recarregado após __init__."""
 
     def test_carrega_do_config_atual(self, xp_cog):
-        xp_cog.bot.config = ServerConfig({"levelup_role_map": {"2": 111}})
-        assert xp_cog._carregar_cargos_por_nivel() == {2: 111}
+        xp_cog.bot.config = ServerConfig({"levelup_role_map": [{"cargo_id": 111, "min": 2, "max": 10}]})
+        assert xp_cog._carregar_cargos_por_nivel() == {111: {"min": 2, "max": 10}}
 
     def test_reflete_mudanca_apos_reload(self, xp_cog):
-        xp_cog.bot.config = ServerConfig({"levelup_role_map": {"2": 111}})
-        assert xp_cog._carregar_cargos_por_nivel() == {2: 111}
+        xp_cog.bot.config = ServerConfig({"levelup_role_map": [{"cargo_id": 111, "min": 2, "max": 10}]})
+        assert xp_cog._carregar_cargos_por_nivel() == {111: {"min": 2, "max": 10}}
 
-        xp_cog.bot.config = ServerConfig({"levelup_role_map": {"2": 111, "5": 222}})
-        assert xp_cog._carregar_cargos_por_nivel() == {2: 111, 5: 222}
+        xp_cog.bot.config = ServerConfig({"levelup_role_map": [
+            {"cargo_id": 111, "min": 2, "max": 10},
+            {"cargo_id": 222, "min": 11, "max": None},
+        ]})
+        assert xp_cog._carregar_cargos_por_nivel() == {
+            111: {"min": 2, "max": 10},
+            222: {"min": 11, "max": None},
+        }
 
     def test_sem_config_retorna_vazio(self, xp_cog):
         xp_cog.bot.config = None
