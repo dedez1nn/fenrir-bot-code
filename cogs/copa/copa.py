@@ -420,8 +420,8 @@ class CopaCog(commands.Cog):
             break
 
     async def _send_eod_bracket(self) -> None:
-        """Renderiza e envia o chaveamento (destaque do dia) + artilharia."""
-        bracket_png = await self._render_bracket(highlight_today=True)
+        """Renderiza e envia o chaveamento (sem destaque do dia) + artilharia."""
+        bracket_png = await self._render_bracket(highlight_today=False)
         art_png = await self._render_artilharia()
         if bracket_png is None and art_png is None:
             return
