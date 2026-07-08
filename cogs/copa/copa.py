@@ -23,8 +23,6 @@ logger = logging.getLogger(__name__)
 
 BRT = copa_svc.BRT
 
-BRACKET_EOD_DELAY_SECS = 3600  # chaveamento postado 1h após o fim do último jogo do dia
-
 
 def _score_str(m: dict) -> str:
     return copa_svc._score(m)
@@ -178,6 +176,19 @@ def _embed_artilharia(scorers: list[dict]) -> discord.Embed:
 
 
 _DAILY_SUMMARY_TITLE = "📅 Jogos de Hoje — Copa do Mundo 2026"
+_NO_GAMES_TITLE = "📅 Sem Jogos Hoje — Copa do Mundo 2026"
+
+
+def _embed_sem_jogos(now_brt: datetime) -> discord.Embed:
+    hoje_str = now_brt.strftime("%d/%m/%Y")
+    embed = discord.Embed(
+        title=_NO_GAMES_TITLE,
+        description="Não há jogos da Copa do Mundo marcados para hoje. Confira o chaveamento abaixo.",
+        color=0x3B82F6,
+    )
+    embed.set_footer(text=hoje_str + " · Copa do Mundo FIFA™ 2026")
+    embed.timestamp = discord.utils.utcnow()
+    return embed
 
 
 def _embed_resumo_diario(jogos: list[dict], now_brt: datetime) -> discord.Embed:
@@ -206,11 +217,6 @@ class CopaCog(commands.Cog):
         self.bot = bot
         self._monitor_channels: list[tuple[int, int]] = []
         self._daily_sent_date: str = ""
-        # Chaveamento de fim de dia: arma quando todos os jogos do dia acabam,
-        # dispara 1h depois. Guardado por data para enviar só uma vez por dia.
-        self._eod_armed_date: str = ""
-        self._eod_due_ts: float = 0.0
-        self._eod_sent_dates: set[str] = set()
 
     async def cog_load(self) -> None:
         if self.bot.db is not None:
@@ -227,7 +233,6 @@ class CopaCog(commands.Cog):
         try:
             await monitor.run_monitor_tick(self.bot, self._monitor_channels)
             await self._check_daily_summary()
-            await self._check_end_of_day_bracket()
         except Exception:
             logger.exception("Erro no loop de monitoramento (tick ignorado)")
 
@@ -267,6 +272,7 @@ class CopaCog(commands.Cog):
             return None
 
         if not jogos:
+            await self._send_no_games_today()
             return jogos
 
         # Seleciona os canais que ainda precisam do resumo de hoje. Se já existe
@@ -304,6 +310,25 @@ class CopaCog(commands.Cog):
             if repin:
                 await self._repin_daily_summary(ch, msg)
         return jogos
+
+    async def _send_no_games_today(self) -> None:
+        """Avisa no canal configurado que não há jogos hoje e envia o chaveamento
+        atual, quando a janela do resumo diário (09:00 BRT) não contém partidas."""
+        embed = _embed_sem_jogos(datetime.now(BRT))
+        bracket_png = await self._render_bracket(highlight_today=False)
+        if bracket_png is not None:
+            embed.set_image(url="attachment://chaveamento.png")
+        for guild_id, channel_id in self._monitor_channels:
+            ch = self.bot.get_channel(channel_id)
+            if not ch:
+                continue
+            files = []
+            if bracket_png is not None:
+                files.append(discord.File(io.BytesIO(bracket_png), filename="chaveamento.png"))
+            try:
+                await ch.send(embed=embed, files=files)
+            except Exception:
+                logger.exception("Erro ao enviar aviso de sem jogos para guild %s", guild_id)
 
     async def _todays_pinned_summary(self, ch) -> "discord.Message | None":
         """Retorna o resumo diário de HOJE já fixado no canal, ou None.
@@ -367,87 +392,6 @@ class CopaCog(commands.Cog):
         except Exception:
             logger.exception("Erro ao gerar imagem da artilharia")
             return None
-
-    async def _check_end_of_day_bracket(self) -> None:
-        """Envia chaveamento + artilharia ~1h após o fim do último jogo de um dia.
-
-        A "data" é a de início dos jogos (BRT), não o relógio atual — assim jogos
-        que começam à noite e terminam após a meia-noite (prorrogação/pênaltis no
-        mata-mata) ainda disparam o envio para o dia correto.
-        """
-        now = time.time()
-
-        # Já armado: aguarda o atraso e dispara uma vez.
-        if self._eod_armed_date:
-            if now < self._eod_due_ts:
-                return
-            date = self._eod_armed_date
-            self._eod_armed_date = ""
-            if date in self._eod_sent_dates:
-                return
-            self._eod_sent_dates.add(date)
-            await self._send_eod_bracket()
-            return
-
-        # Não armado: arma quando todos os jogos de um dia recente terminarem.
-        try:
-            jogos = await asyncio.to_thread(copa_svc.get_jogos_rodada)
-        except Exception:
-            logger.exception("Erro ao buscar jogos da rodada (fim de dia)")
-            return
-        if not jogos:
-            return
-
-        # Agrupa por data de início (BRT).
-        by_date: dict[str, list[dict]] = {}
-        for j in jogos:
-            d = datetime.fromtimestamp(j["date_ts"], tz=BRT).strftime("%Y-%m-%d")
-            by_date.setdefault(d, []).append(j)
-
-        # Considera só a data mais recente cujos jogos já começaram: se todos
-        # terminaram (e ainda não enviada), arma; caso contrário, aguarda.
-        for d in sorted(by_date, reverse=True):
-            games = by_date[d]
-            if not any(g["date_ts"] <= now for g in games):
-                continue  # dia futuro ainda não iniciado
-            if d in self._eod_sent_dates:
-                break
-            if all(g["status"] == "finished" for g in games):
-                self._eod_armed_date = d
-                self._eod_due_ts = now + BRACKET_EOD_DELAY_SECS
-                logger.info("[bracket] todos os %d jogos de %s encerrados — chaveamento em +1h",
-                            len(games), d)
-            break
-
-    async def _send_eod_bracket(self) -> None:
-        """Renderiza e envia o chaveamento (sem destaque do dia) + artilharia."""
-        bracket_png = await self._render_bracket(highlight_today=False)
-        art_png = await self._render_artilharia()
-        if bracket_png is None and art_png is None:
-            return
-        embed = None
-        if bracket_png is not None:
-            embed = discord.Embed(
-                title="🗺️ Chaveamento — Fim dos jogos do dia",
-                description="Situação atual do mata-mata e artilharia.",
-                color=0xFFCD46,
-            )
-            embed.set_image(url="attachment://chaveamento.png")
-            embed.set_footer(text="Copa do Mundo FIFA™ 2026")
-            embed.timestamp = discord.utils.utcnow()
-        for guild_id, channel_id in self._monitor_channels:
-            ch = self.bot.get_channel(channel_id)
-            if not ch:
-                continue
-            files = []
-            if bracket_png is not None:
-                files.append(discord.File(io.BytesIO(bracket_png), filename="chaveamento.png"))
-            if art_png is not None:
-                files.append(discord.File(io.BytesIO(art_png), filename="artilharia.png"))
-            try:
-                await ch.send(embed=embed, files=files)
-            except Exception:
-                logger.exception("Erro ao enviar fim de dia para guild %s", guild_id)
 
     # ── Slash commands ────────────────────────────────────────────────────────
 
@@ -557,7 +501,10 @@ class CopaCog(commands.Cog):
             await ctx.send("❌ Erro ao buscar jogos. Tente novamente.")
             return
         if not jogos:
-            await ctx.send("Nenhum jogo na janela de hoje (até 09:00 BRT de amanhã).")
+            await ctx.send(
+                "Nenhum jogo na janela de hoje (até 09:00 BRT de amanhã) — "
+                "aviso de sem jogos enviado no canal configurado."
+            )
             return
         await ctx.send(f"✅ Resumo enviado ({len(jogos)} jogo(s)).")
 
