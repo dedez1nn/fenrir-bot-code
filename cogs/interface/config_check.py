@@ -2,7 +2,7 @@
 
 Mostram estado de validação de todas as features sem acessar o DB diretamente:
 usam validate_all() contra o bot.config em memória. !config-atual complementa
-com módulos que não passam por validate_all (copa/selfbot/canal-fenrir/status,
+com módulos que não passam por validate_all (selfbot/canal-fenrir/status,
 antispam/antinuke) e paginação.
 """
 
@@ -156,13 +156,6 @@ class ConfigCheck(commands.Cog):
             "Restringe comandos a um canal." if cfg_dict.get("fenrir_command_channel_id")
             else "Sem restrição de canal configurada (comandos liberados em qualquer canal).",
             "!canal-fenrir",
-        ))
-        entries.append((
-            "copa-2026",
-            bool(cfg_dict.get("copa_notify_channel_id")),
-            "Canal de notificações da Copa configurado." if cfg_dict.get("copa_notify_channel_id")
-            else "Canal de notificações da Copa não configurado.",
-            "!config-copa",
         ))
         entries.append((
             "selfbot-trap",

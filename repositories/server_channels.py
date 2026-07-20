@@ -1,4 +1,4 @@
-"""Repositório para os channel IDs de Copa 2026 / selfbot trap / canal-fenrir.
+"""Repositório para os channel IDs de selfbot trap / canal-fenrir.
 
 Substitui a antiga camada Mongo (`services/db.py`) — todos os campos vivem em
 colunas de `server_config`. Usa `INSERT ... ON CONFLICT DO UPDATE` para que uma
@@ -33,20 +33,6 @@ async def _get_all_channels(pool, column: str) -> dict[int, int]:
             f"SELECT guild_id, {column} FROM server_config WHERE {column} IS NOT NULL"
         )
     return {row["guild_id"]: row[column] for row in rows}
-
-
-# ── Copa channels ─────────────────────────────────────────────────────────────
-
-async def get_copa_channel(pool, guild_id: int) -> int | None:
-    return await _get_channel(pool, guild_id, "copa_notify_channel_id")
-
-
-async def set_copa_channel(pool, guild_id: int, channel_id: int) -> None:
-    await _set_channel(pool, guild_id, "copa_notify_channel_id", channel_id)
-
-
-async def get_all_copa_channels(pool) -> list[tuple[int, int]]:
-    return list((await _get_all_channels(pool, "copa_notify_channel_id")).items())
 
 
 # ── Selfbot trap channels ─────────────────────────────────────────────────────
