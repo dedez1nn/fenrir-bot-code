@@ -4,6 +4,7 @@ from discord import app_commands
 import asyncio
 import random
 import time
+from db.local_config import get_channel_id
 
 class TituloModal(discord.ui.Modal, title="🏷️ Escolha seu Título Personalizado"):
     def __init__(self, compra_cog, user_id, interaction_original):
@@ -47,7 +48,7 @@ class TituloModal(discord.ui.Modal, title="🏷️ Escolha seu Título Personali
             ephemeral=True
         )
         
-        canal_log = self.compra_cog.bot.get_channel(self.compra_cog.bot.config.get("xp_log_channel_id") if self.compra_cog.bot.config else None)
+        canal_log = self.compra_cog.bot.get_channel(get_channel_id(self.compra_cog.bot, "xp_log_channel_id"))
         if canal_log:
             user = self.compra_cog.bot.get_user(self.user_id)
             embed_log = discord.Embed(
@@ -121,7 +122,7 @@ class CorPremiumModal(discord.ui.Modal, title="🎨 Escolha sua Cor Premium"):
                         ephemeral=True
                     )
                     
-                    canal_log = self.compra_cog.bot.get_channel(self.compra_cog.bot.config.get("xp_log_channel_id") if self.compra_cog.bot.config else None)
+                    canal_log = self.compra_cog.bot.get_channel(get_channel_id(self.compra_cog.bot, "xp_log_channel_id"))
                     if canal_log:
                         embed_log = discord.Embed(
                             title="🎨 Cor Premium Selecionada",

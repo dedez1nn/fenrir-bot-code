@@ -12,6 +12,7 @@ from typing import Optional
 
 import repositories.guilds as guilds_repo
 import repositories.users as users_repo
+from db.local_config import get_channel_id
 
 log = logging.getLogger(__name__)
 
@@ -774,8 +775,7 @@ class ConfirmacaoAliancaView(discord.ui.View):
 
     async def notificar_aliados_atacante(self, raid_data: dict):
         try:
-            _cfg = getattr(self.guild_system.bot, "config", None)
-            canal_aliancas_id = _cfg.get("guild_raid_channel_id") if _cfg else None
+            canal_aliancas_id = get_channel_id(self.guild_system.bot, "guild_raid_channel_id")
             canal = self.guild_system.bot.get_channel(canal_aliancas_id)
             
             if not canal:
@@ -875,8 +875,7 @@ class ConfirmacaoDefensorAliancaView(discord.ui.View):
 
     async def notificar_aliados_defensor(self, raid_data: dict):
         try:
-            _cfg = getattr(self.guild_system.bot, "config", None)
-            canal_aliancas_id = _cfg.get("guild_raid_channel_id") if _cfg else None
+            canal_aliancas_id = get_channel_id(self.guild_system.bot, "guild_raid_channel_id")
             canal = self.guild_system.bot.get_channel(canal_aliancas_id)
             
             if not canal:
@@ -936,8 +935,7 @@ class GuildAllianceRaidSystem(commands.Cog):
 
     @property
     def CANAL_RAIDS_ID(self) -> int | None:
-        cfg = getattr(self.bot, "config", None)
-        return cfg.get("guild_raid_channel_id") if cfg else None
+        return get_channel_id(self.bot, "guild_raid_channel_id")
 
     async def cog_load(self) -> None:
         self.use_db = self.bot.db is not None

@@ -12,6 +12,7 @@ import requests
 import asyncio
 
 from repositories import users as users_repo
+from db.local_config import get_channel_id
 
 
 class ConfirmView(discord.ui.View):
@@ -615,7 +616,7 @@ class XPCog(commands.Cog):
         if subiu_nivel:
             user = self.bot.get_user(int(user_id))
             if user:
-                canal_xp = self.bot.get_channel(self.bot.config.get("levelup_channel_id") if self.bot.config else None)
+                canal_xp = self.bot.get_channel(get_channel_id(self.bot, "levelup_channel_id"))
 
                 coins_ganhos = 0
                 bonus_info = []
@@ -631,7 +632,7 @@ class XPCog(commands.Cog):
                         if coins_cog:
                             await coins_cog.adicionar_coins_sem_multiplo(user_id, coins_ganhos, f"Bonus por alcançar nível {dados['nivel']}")
 
-                            canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
+                            canal_log = self.bot.get_channel(get_channel_id(self.bot, "xp_log_channel_id"))
                             if canal_log:
                                 embed_log = discord.Embed(
                                     title="💰 Bonus de Coins por Level UP!",
@@ -754,7 +755,7 @@ class XPCog(commands.Cog):
         if subiu_nivel:
             user = self.bot.get_user(int(user_id))
             if user:
-                canal_xp = self.bot.get_channel(self.bot.config.get("levelup_channel_id") if self.bot.config else None)
+                canal_xp = self.bot.get_channel(get_channel_id(self.bot, "levelup_channel_id"))
 
                 coins_ganhos = 0
                 bonus_info = []
@@ -770,7 +771,7 @@ class XPCog(commands.Cog):
                         if coins_cog:
                             await coins_cog.adicionar_coins_sem_multiplo(user_id, coins_ganhos, f"Bonus por alcançar nível {dados['nivel']}")
 
-                            canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
+                            canal_log = self.bot.get_channel(get_channel_id(self.bot, "xp_log_channel_id"))
                             if canal_log:
                                 embed_log = discord.Embed(
                                     title="💰 Bonus de Coins por Level UP!",
@@ -908,7 +909,7 @@ class XPCog(commands.Cog):
             else:
                 self.salvar_dados()
 
-            canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
+            canal_log = self.bot.get_channel(get_channel_id(self.bot, "xp_log_channel_id"))
             user = self.bot.get_user(user_id)
             if canal_log and user:
                 embed_log = discord.Embed(
@@ -1028,7 +1029,7 @@ class XPCog(commands.Cog):
                             usuarios_que_ganharam.append((user, self.voice_xp_amount, xp_atual))
 
                 if usuarios_que_ganharam:
-                    canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
+                    canal_log = self.bot.get_channel(get_channel_id(self.bot, "xp_log_channel_id"))
                     if canal_log:
                         descricao_lines = []
                         for user, xp_ganho, xp_total in usuarios_que_ganharam:
@@ -1139,7 +1140,7 @@ class XPCog(commands.Cog):
 
         await self.adicionar_xp(user_id, reason="Mensagem no chat")
 
-        canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
+        canal_log = self.bot.get_channel(get_channel_id(self.bot, "xp_log_channel_id"))
 
         if canal_log:
             status_dobro = " (DOBRO DE XP ATIVO!)" if self.verificar_dobro_xp(message.author.id) else ""
@@ -1210,7 +1211,7 @@ class XPCog(commands.Cog):
                 )
 
             try:
-                canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
+                canal_log = self.bot.get_channel(get_channel_id(self.bot, "xp_log_channel_id"))
                 if canal_log:
                     embed_log = discord.Embed(
                         title="🔎 Consulta de XP",
@@ -1500,7 +1501,7 @@ class XPCog(commands.Cog):
 
             self.user_data.clear()
 
-            canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
+            canal_log = self.bot.get_channel(get_channel_id(self.bot, "xp_log_channel_id"))
             embed_log = discord.Embed(
                 title="🔔 Remoção de Experiência Geral",
                 description=f"\n\nO Administrador {ctx.author.mention} zerou o XP de todos!\n"
@@ -1555,7 +1556,7 @@ class XPCog(commands.Cog):
 
                 await self.atualizar_cargos(membro, 1)
 
-                canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
+                canal_log = self.bot.get_channel(get_channel_id(self.bot, "xp_log_channel_id"))
                 embed_log = discord.Embed(
                     title="🔔 Remoção de Experiência",
                     description=f"\n\nO Administrador {ctx.author.mention}\n"
@@ -1605,7 +1606,7 @@ class XPCog(commands.Cog):
 
             await self._persistir_xp(user_id, dados)
 
-            canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
+            canal_log = self.bot.get_channel(get_channel_id(self.bot, "xp_log_channel_id"))
             embed_log = discord.Embed(
                 title="🔔 Remoção de Experiência",
                 description=f"\n\nO Administrador {ctx.author.mention}\n"
@@ -1648,7 +1649,7 @@ class XPCog(commands.Cog):
                 f"**XP:** {xp_antes} → {dados['xp']}"
             )
 
-            canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
+            canal_log = self.bot.get_channel(get_channel_id(self.bot, "xp_log_channel_id"))
             if canal_log:
                 embed_log = discord.Embed(
                     title="🔔 XP Adicionado por ADM",
@@ -1782,7 +1783,7 @@ class XPCog(commands.Cog):
             embed.set_footer(text="© 2025 ALCATEIA DO FENRIR")
 
             try:
-                canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
+                canal_log = self.bot.get_channel(get_channel_id(self.bot, "xp_log_channel_id"))
                 if canal_log:
                     embed_log = discord.Embed(
                         title="📊 Criação de Ranking",

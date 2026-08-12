@@ -6,6 +6,7 @@ from typing import Literal
 import json
 import os
 import time
+from db.local_config import get_channel_id
 
 class PremiumCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -140,9 +141,7 @@ class PremiumCog(commands.Cog):
 
     async def enviar_log_expiracao(self, user: discord.User, plano_expirado: str):
         try:
-            canal_log = self.bot.get_channel(
-                self.bot.config.get("premium_log_channel_id") if self.bot.config else None
-            )
+            canal_log = self.bot.get_channel(get_channel_id(self.bot, "premium_log_channel_id"))
             if canal_log:
                 plano_info = self.planos_info.get(plano_expirado, {})
                 nome_plano = plano_info.get('nome', plano_expirado.title())
@@ -355,7 +354,7 @@ class PremiumCog(commands.Cog):
             self.salvar_dados(dados_usuarios)
 
             await self.enviar_embed_premium(usuario, plano_anterior, "removido")
-            canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
+            canal_log = self.bot.get_channel(get_channel_id(self.bot, "xp_log_channel_id"))
             if canal_log:
                 embed_log = discord.Embed(
                     title="🔧 Plano Premium Removido",
@@ -437,9 +436,7 @@ class PremiumCog(commands.Cog):
 
                 await ctx.send(mensagem)
             
-            canal_log = self.bot.get_channel(
-                self.bot.config.get("premium_log_channel_id") if self.bot.config else None
-            )
+            canal_log = self.bot.get_channel(get_channel_id(self.bot, "premium_log_channel_id"))
             if canal_log:
                 embed_log = discord.Embed(
                     title="🔧 Plano Premium Modificado (ADM)",

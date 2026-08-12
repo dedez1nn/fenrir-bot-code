@@ -11,6 +11,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 import os
+from db.local_config import get_channel_id
 load_dotenv()
 
 from repositories import users as users_repo
@@ -131,9 +132,7 @@ class PixCog(commands.Cog):
         if recompensa.get("xp"):
             await self.adicionar_xp_manual(user_id, recompensa["xp"])
 
-        canal_log = self.bot.get_channel(
-            self.bot.config.get("xp_log_channel_id") if self.bot.config else None
-        )
+        canal_log = self.bot.get_channel(get_channel_id(self.bot, "xp_log_channel_id"))
         if canal_log:
             user = self.bot.get_user(user_id)
             embed = discord.Embed(
@@ -261,9 +260,7 @@ class PixCog(commands.Cog):
 
     async def criar_canal_pagamento(self, interaction: discord.Interaction, plano: str):
         guild = interaction.guild
-        categoria = guild.get_channel(
-            self.bot.config.get("premium_payment_category_id") if self.bot.config else None
-        )
+        categoria = guild.get_channel(get_channel_id(self.bot, "premium_payment_category_id"))
         
         if not categoria:
             await interaction.response.send_message("❌ Categoria não encontrada.", ephemeral=True)
@@ -432,7 +429,7 @@ class PixCog(commands.Cog):
             )
             await canal.send(embed=embed)
 
-            canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
+            canal_log = self.bot.get_channel(get_channel_id(self.bot, "xp_log_channel_id"))
             if canal_log:
                 embed_log = discord.Embed(
                     title="💎 Plano Premium Ativado",
@@ -615,9 +612,7 @@ class PixCog(commands.Cog):
         """Envia embed de log com premiums expirados."""
         if not usuarios_removidos:
             return
-        canal_log = self.bot.get_channel(
-            self.bot.config.get("xp_log_channel_id") if self.bot.config else None
-        )
+        canal_log = self.bot.get_channel(get_channel_id(self.bot, "xp_log_channel_id"))
         if not canal_log:
             return
 
@@ -675,9 +670,7 @@ class PixCog(commands.Cog):
             with open("data/user_data.json", "w", encoding="utf-8") as f:
                 json.dump(user_data, f, indent=4, ensure_ascii=False)
 
-            canal_log = self.bot.get_channel(
-                self.bot.config.get("coins_log_channel_id") if self.bot.config else None
-            )
+            canal_log = self.bot.get_channel(get_channel_id(self.bot, "coins_log_channel_id"))
             if canal_log:
                 user = self.bot.get_user(user_id)
                 if user:
@@ -724,9 +717,7 @@ class PixCog(commands.Cog):
             with open("data/user_data.json", "w", encoding="utf-8") as f:
                 json.dump(user_data, f, indent=4, ensure_ascii=False)
 
-            canal_log = self.bot.get_channel(
-                self.bot.config.get("xp_log_channel_id") if self.bot.config else None
-            )
+            canal_log = self.bot.get_channel(get_channel_id(self.bot, "xp_log_channel_id"))
             if canal_log:
                 user = self.bot.get_user(user_id)
                 if user:

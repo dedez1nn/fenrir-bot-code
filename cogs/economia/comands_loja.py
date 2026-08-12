@@ -4,6 +4,7 @@ from discord import app_commands
 import asyncio
 import random
 import time
+from db.local_config import get_channel_id
 
 class ComandosLojaCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -127,7 +128,7 @@ class ComandosLojaCog(commands.Cog):
                     timestamp=discord.utils.utcnow()
                 )
                 
-                canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
+                canal_log = self.bot.get_channel(get_channel_id(self.bot, "xp_log_channel_id"))
                 if canal_log:
                     embed_log = discord.Embed(
                         title="🎭 Roubo de Coins Executado",
@@ -235,7 +236,7 @@ class ComandosLojaCog(commands.Cog):
 
             await interaction.response.send_message(embed=embed)
 
-            canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
+            canal_log = self.bot.get_channel(get_channel_id(self.bot, "xp_log_channel_id"))
             if canal_log:
                 embed_log = discord.Embed(
                     title="📛 Canal Renomeado Temporariamente",
@@ -327,7 +328,7 @@ class ComandosLojaCog(commands.Cog):
                 ephemeral=True
             )
 
-            canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
+            canal_log = self.bot.get_channel(get_channel_id(self.bot, "xp_log_channel_id"))
             if canal_log:
                 embed_log = discord.Embed(
                     title="📊 Enquete Criada",

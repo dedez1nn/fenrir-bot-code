@@ -26,6 +26,7 @@ from .feature_config import (
     validate_and_save_for_cog,
 )
 from .validators import validate_all, VALIDATORS
+from .local_config import get_channel_id as get_local_channel_id
 
 __all__ = [
     "init_pool",
@@ -51,4 +52,5 @@ __all__ = [
     "validate_and_save_for_cog",
     "validate_all",
     "VALIDATORS",
+    "get_local_channel_id",
 ]

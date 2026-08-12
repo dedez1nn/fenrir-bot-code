@@ -10,6 +10,7 @@ import random
 from datetime import datetime, timedelta, timezone
 
 import repositories.adventures as adventures_repo
+from db.local_config import get_channel_id
 
 log = logging.getLogger(__name__)
 
@@ -210,7 +211,7 @@ class AventuraCog(commands.Cog):
                 sucesso = await level_cog.adicionar_xp(user_id, xp, motivo)
                 
                 if sucesso and xp > 0:
-                    canal_log = self.bot.get_channel(self.bot.config.get("xp_log_channel_id") if self.bot.config else None)
+                    canal_log = self.bot.get_channel(get_channel_id(self.bot, "xp_log_channel_id"))
                     if canal_log:
                         user = self.bot.get_user(user_id)
                         if isinstance(user, discord.User):
@@ -395,8 +396,7 @@ class AventuraCog(commands.Cog):
 
             await interaction.response.send_message(embed=embed)
 
-            _cfg = getattr(self.aventura_cog.bot, "config", None)
-            _log_id = _cfg.get("adventure_log_channel_id") if _cfg else None
+            _log_id = get_channel_id(self.aventura_cog.bot, "adventure_log_channel_id")
             canal_log = self.aventura_cog.bot.get_channel(_log_id)
             if canal_log:
                 if vitoria:
@@ -468,8 +468,7 @@ class AventuraCog(commands.Cog):
 
             await interaction.response.send_message(embed=embed)
 
-            _cfg = getattr(self.aventura_cog.bot, "config", None)
-            _log_id = _cfg.get("adventure_log_channel_id") if _cfg else None
+            _log_id = get_channel_id(self.aventura_cog.bot, "adventure_log_channel_id")
             canal_log = self.aventura_cog.bot.get_channel(_log_id)
             if canal_log:
                 embed_log = discord.Embed(
@@ -542,8 +541,7 @@ class AventuraCog(commands.Cog):
 
             await interaction.response.send_message(embed=embed)
 
-            _cfg = getattr(self.aventura_cog.bot, "config", None)
-            _log_id = _cfg.get("adventure_log_channel_id") if _cfg else None
+            _log_id = get_channel_id(self.aventura_cog.bot, "adventure_log_channel_id")
             canal_log = self.aventura_cog.bot.get_channel(_log_id)
             if canal_log:
                 embed_log = discord.Embed(

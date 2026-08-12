@@ -778,11 +778,13 @@ class ConfigBotCog(commands.Cog):
         premium_categoria: discord.CategoryChannel = None,
         premium_log: discord.TextChannel = None,
     ):
-        """Persiste os canais que hoje dependem de IDs padrão hardcoded."""
-        if not self.bot.db:
-            await ctx.send("❌ Banco de dados não disponível.")
-            return
+        """Persiste os canais que hoje dependem de IDs padrão hardcoded.
 
+        Com Postgres disponível, grava em `server_config` (fonte de verdade,
+        compartilhada com o painel). Sem Postgres, cai para
+        `data/local_config.json` — só vale para esta instância do bot, mas
+        evita deixar o comando inutilizável quando não há banco.
+        """
         fields = {}
         if voz_criador:
             fields["voice_creator_channel_id"] = voz_criador.id
@@ -805,15 +807,24 @@ class ConfigBotCog(commands.Cog):
             await ctx.send("⚠️ Nenhum canal foi especificado.")
             return
 
-        try:
-            await self._persist_config(ctx.guild.id, fields)
-        except Exception as e:
-            log.error(f"Erro ao configurar canais de sistemas: {e}")
-            await ctx.send(f"❌ Erro: {e}")
-            return
+        if self.bot.db:
+            try:
+                await self._persist_config(ctx.guild.id, fields)
+            except Exception as e:
+                log.error(f"Erro ao configurar canais de sistemas: {e}")
+                await ctx.send(f"❌ Erro: {e}")
+                return
+        else:
+            from db.local_config import set_many
+            set_many(fields)
+            voice_creator_cog = self.bot.get_cog("VoiceCreator")
+            if voice_creator_cog and hasattr(voice_creator_cog, "reload_feature_state"):
+                await voice_creator_cog.reload_feature_state()
 
+        aviso_local = "" if self.bot.db else "⚠️ Sem Postgres — salvo localmente (`data/local_config.json`), só vale para esta instância."
         embed = discord.Embed(
             title="✅ Canais de Sistemas Atualizados",
+            description=aviso_local or None,
             color=discord.Color.green(),
         )
         if voz_criador:

@@ -6,6 +6,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from repositories import items as items_repo
+from db.local_config import get_channel_id
 
 
 def _db_row_to_item(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -231,9 +232,7 @@ class LojaCog(commands.Cog):
         cor=discord.Color.gold(),
     ):
         try:
-            canal_id = (
-                self.bot.config.get("coins_log_channel_id") if self.bot.config else None
-            )
+            canal_id = get_channel_id(self.bot, "coins_log_channel_id")
             canal_log = self.bot.get_channel(canal_id) if canal_id else None
             if canal_log:
                 embed_log = discord.Embed(

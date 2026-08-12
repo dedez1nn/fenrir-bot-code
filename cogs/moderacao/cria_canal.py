@@ -181,8 +181,9 @@ class VoiceCreator(commands.Cog):
         self.channel_name_prefix: str = "🔊 Sala de"
 
     async def cog_load(self) -> None:
+        from db.local_config import get_channel_id
         cfg = getattr(self.bot, "config", None)
-        self.main_channel_id = cfg.get("voice_creator_channel_id") if cfg else None
+        self.main_channel_id = get_channel_id(self.bot, "voice_creator_channel_id")
         if self.bot.db is not None:
             guild_id = (cfg.get("guild_id") if cfg else None)
             if guild_id:

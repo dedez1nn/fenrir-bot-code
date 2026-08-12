@@ -9,6 +9,7 @@ from PIL import Image, ImageDraw, ImageFont
 import io, requests, os, json
 
 from repositories import users as users_repo
+from db.local_config import get_channel_id
 
 
 class RankingCoinsView(discord.ui.View):
@@ -368,7 +369,7 @@ class FenrirCoins(commands.Cog):
 
     async def registrar_transacao(self, user_id: int, quantidade: int, motivo: str):
         try:
-            canal_log = self.bot.get_channel(self.bot.config.get("coins_log_channel_id") if self.bot.config else None)
+            canal_log = self.bot.get_channel(get_channel_id(self.bot, "coins_log_channel_id"))
             if canal_log:
                 user = self.bot.get_user(user_id)
                 if user:
@@ -406,7 +407,7 @@ class FenrirCoins(commands.Cog):
 
     async def enviar_log(self, user_id, acao, descricao, cor=discord.Color.dark_red()):
         try:
-            canal_log = self.bot.get_channel(self.bot.config.get("coins_log_channel_id") if self.bot.config else None)
+            canal_log = self.bot.get_channel(get_channel_id(self.bot, "coins_log_channel_id"))
             if canal_log:
                 user = self.bot.get_user(int(user_id))
                 user_mention = user.mention if user else f"Usuário {user_id}"
