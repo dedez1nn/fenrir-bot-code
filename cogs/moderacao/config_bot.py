@@ -364,80 +364,56 @@ class ConfigBotCog(commands.Cog):
         antispam: discord.TextChannel = None,
         antinuke: discord.TextChannel = None
     ):
-        """Edita canais de log."""
-        if not self.bot.db:
-            await ctx.send("❌ Banco de dados não disponível.")
+        """Edita canais de log.
+
+        Com Postgres disponível, grava em `server_config`. Sem Postgres, cai
+        para `data/local_config.json` (só vale para esta instância).
+        """
+        fields = {}
+        if commands_ch:
+            fields["commands_channel_id"] = commands_ch.id
+        if status:
+            fields["status_channel_id"] = status.id
+        if help_ch:
+            fields["help_channel_id"] = help_ch.id
+        if antispam:
+            fields["antispam_log_channel_id"] = antispam.id
+        if antinuke:
+            fields["antinuke_log_channel_id"] = antinuke.id
+
+        if not fields:
+            await ctx.send("⚠️ Nenhum canal foi especificado.")
             return
 
-        try:
-            async with self.bot.db.acquire() as conn:
-                updates = []
-                params = [ctx.guild.id]
-                idx = 2
+        if self.bot.db:
+            try:
+                await self._persist_config(ctx.guild.id, fields)
+            except Exception as e:
+                log.error(f"Erro ao configurar canais de log: {e}")
+                await ctx.send(f"❌ Erro: {e}")
+                return
+        else:
+            from db.local_config import set_many
+            set_many(fields)
 
-                if commands_ch:
-                    updates.append(f"commands_channel_id = ${idx}")
-                    params.append(commands_ch.id)
-                    idx += 1
+        aviso_local = "" if self.bot.db else "⚠️ Sem Postgres — salvo localmente (`data/local_config.json`), só vale para esta instância."
+        embed = discord.Embed(
+            title="✅ Canais de Log Atualizados",
+            description=aviso_local or "Canais foram configurados com sucesso!",
+            color=discord.Color.green()
+        )
+        if commands_ch:
+            embed.add_field(name="📢 Commands", value=commands_ch.mention, inline=True)
+        if status:
+            embed.add_field(name="📊 Status", value=status.mention, inline=True)
+        if help_ch:
+            embed.add_field(name="❓ Help", value=help_ch.mention, inline=True)
+        if antispam:
+            embed.add_field(name="🚫 Antispam", value=antispam.mention, inline=True)
+        if antinuke:
+            embed.add_field(name="☢️ Antinuke", value=antinuke.mention, inline=True)
 
-                if status:
-                    updates.append(f"status_channel_id = ${idx}")
-                    params.append(status.id)
-                    idx += 1
-
-                if help_ch:
-                    updates.append(f"help_channel_id = ${idx}")
-                    params.append(help_ch.id)
-                    idx += 1
-
-                if antispam:
-                    updates.append(f"antispam_log_channel_id = ${idx}")
-                    params.append(antispam.id)
-                    idx += 1
-
-                if antinuke:
-                    updates.append(f"antinuke_log_channel_id = ${idx}")
-                    params.append(antinuke.id)
-                    idx += 1
-
-                if not updates:
-                    await ctx.send("⚠️ Nenhum canal foi especificado.")
-                    return
-
-                updates.append("updated_at = NOW()")
-                query = f"UPDATE server_config SET {', '.join(updates)} WHERE guild_id = $1"
-                await conn.execute(query, *params)
-
-                from db.config import refresh_server_config
-                await refresh_server_config(self.bot.db, ctx.guild.id)
-
-                async with self.bot.db.acquire() as conn:
-                    await conn.execute(
-                        "SELECT pg_notify('fenrir_cache', $1)",
-                        f"config:{ctx.guild.id}"
-                    )
-
-            embed = discord.Embed(
-                title="✅ Canais de Log Atualizados",
-                description="Canais foram configurados com sucesso!",
-                color=discord.Color.green()
-            )
-            if commands_ch:
-                embed.add_field(name="📢 Commands", value=commands_ch.mention, inline=True)
-            if status:
-                embed.add_field(name="📊 Status", value=status.mention, inline=True)
-            if help_ch:
-                embed.add_field(name="❓ Help", value=help_ch.mention, inline=True)
-            if antispam:
-                embed.add_field(name="🚫 Antispam", value=antispam.mention, inline=True)
-            if antinuke:
-                embed.add_field(name="☢️ Antinuke", value=antinuke.mention, inline=True)
-
-            await ctx.send(embed=embed)
-
-        except Exception as e:
-            log.error(f"Erro ao configurar canais de log: {e}")
-            await ctx.send(f"❌ Erro: {e}")
+        await ctx.send(embed=embed)
 
     @commands.command(name="config-canais-embeds")
     @commands.has_permissions(administrator=True)
@@ -450,80 +426,57 @@ class ConfigBotCog(commands.Cog):
         entrada: discord.TextChannel = None,
         saida: discord.TextChannel = None,
     ):
-        """Edita os canais das embeds fixas (pix/ticket/cores) e logs de entrada/saída."""
-        if not self.bot.db:
-            await ctx.send("❌ Banco de dados não disponível.")
+        """Edita os canais das embeds fixas (pix/ticket/cores) e logs de entrada/saída.
+
+        Com Postgres disponível, grava em `server_config`. Sem Postgres, cai
+        para `data/local_config.json` (só vale para esta instância).
+        """
+        fields = {}
+        if pix:
+            fields["pix_channel_id"] = pix.id
+        if ticket:
+            fields["tickets_channel_id"] = ticket.id
+        if cores:
+            fields["colors_channel_id"] = cores.id
+        if entrada:
+            fields["member_join_log_channel_id"] = entrada.id
+        if saida:
+            fields["member_leave_log_channel_id"] = saida.id
+
+        if not fields:
+            await ctx.send("⚠️ Nenhum canal foi especificado.")
             return
 
-        try:
-            async with self.bot.db.acquire() as conn:
-                updates = []
-                params = [ctx.guild.id]
-                idx = 2
+        if self.bot.db:
+            try:
+                await self._persist_config(ctx.guild.id, fields)
+            except Exception as e:
+                log.error(f"Erro ao configurar canais de embeds: {e}")
+                await ctx.send(f"❌ Erro: {e}")
+                return
+        else:
+            from db.local_config import set_many
+            set_many(fields)
 
-                if pix:
-                    updates.append(f"pix_channel_id = ${idx}")
-                    params.append(pix.id)
-                    idx += 1
+        aviso_local = "" if self.bot.db else "\n⚠️ Sem Postgres — salvo localmente (`data/local_config.json`), só vale para esta instância."
+        embed = discord.Embed(
+            title="✅ Canais de Embeds Atualizados",
+            description="As embeds de pix/ticket/cores são (re)postadas nesses canais no próximo boot do bot."
+            + aviso_local,
+            color=discord.Color.green()
+        )
+        if pix:
+            embed.add_field(name="💎 Pix", value=pix.mention, inline=True)
+        if ticket:
+            embed.add_field(name="🎫 Ticket", value=ticket.mention, inline=True)
+        if cores:
+            embed.add_field(name="🎨 Cores", value=cores.mention, inline=True)
+        if entrada:
+            embed.add_field(name="👋 Entrada", value=entrada.mention, inline=True)
+        if saida:
+            embed.add_field(name="🚪 Saída", value=saida.mention, inline=True)
 
-                if ticket:
-                    updates.append(f"tickets_channel_id = ${idx}")
-                    params.append(ticket.id)
-                    idx += 1
-
-                if cores:
-                    updates.append(f"colors_channel_id = ${idx}")
-                    params.append(cores.id)
-                    idx += 1
-
-                if entrada:
-                    updates.append(f"member_join_log_channel_id = ${idx}")
-                    params.append(entrada.id)
-                    idx += 1
-
-                if saida:
-                    updates.append(f"member_leave_log_channel_id = ${idx}")
-                    params.append(saida.id)
-                    idx += 1
-
-                if not updates:
-                    await ctx.send("⚠️ Nenhum canal foi especificado.")
-                    return
-
-                updates.append("updated_at = NOW()")
-                query = f"UPDATE server_config SET {', '.join(updates)} WHERE guild_id = $1"
-                await conn.execute(query, *params)
-
-                from db.config import refresh_server_config
-                await refresh_server_config(self.bot.db, ctx.guild.id)
-
-                async with self.bot.db.acquire() as conn:
-                    await conn.execute(
-                        "SELECT pg_notify('fenrir_cache', $1)",
-                        f"config:{ctx.guild.id}"
-                    )
-
-            embed = discord.Embed(
-                title="✅ Canais de Embeds Atualizados",
-                description="As embeds de pix/ticket/cores são (re)postadas nesses canais no próximo boot do bot.",
-                color=discord.Color.green()
-            )
-            if pix:
-                embed.add_field(name="💎 Pix", value=pix.mention, inline=True)
-            if ticket:
-                embed.add_field(name="🎫 Ticket", value=ticket.mention, inline=True)
-            if cores:
-                embed.add_field(name="🎨 Cores", value=cores.mention, inline=True)
-            if entrada:
-                embed.add_field(name="👋 Entrada", value=entrada.mention, inline=True)
-            if saida:
-                embed.add_field(name="🚪 Saída", value=saida.mention, inline=True)
-
-            await ctx.send(embed=embed)
-
-        except Exception as e:
-            log.error(f"Erro ao configurar canais de embeds: {e}")
-            await ctx.send(f"❌ Erro: {e}")
+        await ctx.send(embed=embed)
 
     @commands.command(name="config-economia")
     @commands.has_permissions(administrator=True)

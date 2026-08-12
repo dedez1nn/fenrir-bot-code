@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from db import (
     apply_migrations,
     close_pool,
+    get_local_channel_id,
     import_legacy_json,
     init_pool,
     load_global_config,
@@ -269,10 +270,7 @@ class FenrirBot(commands.Bot):
         """
         if interaction.user.guild_permissions.administrator:
             return False
-        cfg = self.config
-        if cfg is None:
-            return False
-        cmd_ch_id = cfg.get("commands_channel_id")
+        cmd_ch_id = get_local_channel_id(self, "commands_channel_id")
         if cmd_ch_id is None:
             return False
         if interaction.channel.id == cmd_ch_id:
@@ -337,10 +335,8 @@ class FenrirBot(commands.Bot):
             await super().close()
 
     def _cfg_channel(self, key: str):
-        """Resolve um canal via server_config. Retorna None se config/canal indisponível."""
-        if self.config is None:
-            return None
-        ch_id = self.config.get(key)
+        """Resolve um canal via server_config (ou fallback local). None se indisponível."""
+        ch_id = get_local_channel_id(self, key)
         return self.get_channel(ch_id) if ch_id else None
 
     async def on_ready(self):

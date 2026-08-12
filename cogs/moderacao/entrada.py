@@ -3,6 +3,8 @@ from discord.ext import commands
 import json
 import os
 
+from db.local_config import get_channel_id
+
 _DEFAULT_JOIN_LOG_CH  = None
 _DEFAULT_HELP_CH      = None
 _DEFAULT_LEAVE_LOG_CH = None
@@ -35,8 +37,7 @@ class MemberLogs(commands.Cog):
         return validate_member_logs(cfg.to_dict() if cfg else {})
 
     def _cfg(self, key: str, default: int) -> int:
-        c = getattr(self.bot, "config", None)
-        return (c.get(key) if c else None) or default
+        return get_channel_id(self.bot, key, default)
 
     def carregar_xp(self):
         if os.path.exists(self.xp_file):
@@ -53,8 +54,7 @@ class MemberLogs(commands.Cog):
         if not self.feature_enabled:
             return
         channel = member.guild.get_channel(self._cfg("member_join_log_channel_id", _DEFAULT_JOIN_LOG_CH))
-        _cfg = getattr(self.bot, "config", None)
-        _tickets_id = _cfg.get("tickets_channel_id") if _cfg else None
+        _tickets_id = get_channel_id(self.bot, "tickets_channel_id")
         ticket = member.guild.get_channel(_tickets_id) if _tickets_id else None
         duvidas = member.guild.get_channel(self._cfg("help_channel_id", _DEFAULT_HELP_CH))
 

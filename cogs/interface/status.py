@@ -4,6 +4,8 @@ import discord
 from discord.ext import commands
 from datetime import datetime
 
+from db.local_config import get_channel_id
+
 
 _DEFAULT_STATUS_CHANGELOG_CH = None
 
@@ -18,7 +20,7 @@ class StatusCog(commands.Cog):
 
     async def status(self, canal):
         if canal is None:
-            status_id = getattr(self.bot.config, "status_channel_id", None) if self.bot.config else None
+            status_id = get_channel_id(self.bot, "status_channel_id")
             canal = self.bot.get_channel(status_id) if status_id else None
 
         canal_changelog = self.bot.get_channel(self._changelog_channel_id())

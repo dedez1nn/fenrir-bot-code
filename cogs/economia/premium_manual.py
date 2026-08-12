@@ -295,8 +295,7 @@ class PremiumCog(commands.Cog):
     @app_commands.command(name="premium", description="Mostra informações sobre os planos premium")
     async def premium_info(self, interaction: discord.Interaction):
         
-        _cfg = self.bot.config
-        _cmd_ch = _cfg.get("commands_channel_id") if _cfg else None
+        _cmd_ch = get_channel_id(self.bot, "commands_channel_id")
         ephemero = bool(
             _cmd_ch and interaction.channel.id != _cmd_ch
             and not interaction.user.guild_permissions.administrator
@@ -315,7 +314,7 @@ class PremiumCog(commands.Cog):
                 timestamp=discord.utils.utcnow()
             )
             
-            canal_premium = self.bot.get_channel(_cfg.get("pix_channel_id") if _cfg else None)
+            canal_premium = self.bot.get_channel(get_channel_id(self.bot, "pix_channel_id"))
             
             if canal_premium:
                 embed.add_field(

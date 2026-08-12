@@ -229,8 +229,7 @@ class CompraCog(commands.Cog):
             return False
 
     async def enviar_mensagem_ticket(self, interaction: discord.Interaction, item_nome: str):
-        _cfg = getattr(interaction.client, "config", None)
-        _ch_id = _cfg.get("tickets_channel_id") if _cfg else 0
+        _ch_id = get_channel_id(interaction.client, "tickets_channel_id", 0)
         mensagem = (
             f"✅ **Compra Confirmada**\n\n"
             f"Para conseguir o **{item_nome}**, abra um ticket em: <#{_ch_id}>\n\n"
