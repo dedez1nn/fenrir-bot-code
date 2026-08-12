@@ -1,4 +1,5 @@
 import discord
+from discord import app_commands
 from discord.ext import commands
 from typing import Literal
 import logging
@@ -63,7 +64,7 @@ class ConfigBotView(discord.ui.View):
                       f"• **Help**: {self._format_channel(self.config_data.get('help_channel_id'))}\n"
                       f"• **Antispam Log**: {self._format_channel(self.config_data.get('antispam_log_channel_id'))}\n"
                       f"• **Antinuke Log**: {self._format_channel(self.config_data.get('antinuke_log_channel_id'))}\n\n"
-                      f"Para editar, use: `!config-canais-log`",
+                      f"Para editar, use: `/config-canais-log`",
                 inline=False
             )
 
@@ -76,7 +77,7 @@ class ConfigBotView(discord.ui.View):
                       f"• **Coins Log**: {self._format_channel(self.config_data.get('coins_log_channel_id'))}\n"
                       f"• **XP Log**: {self._format_channel(self.config_data.get('xp_log_channel_id'))}\n"
                       f"• **Level Up**: {self._format_channel(self.config_data.get('levelup_channel_id'))}\n\n"
-                      f"Para editar, use: `!config-canais-embeds` (pix/loja) ou `!config-canais-sistemas` (coins/xp/levelup)",
+                      f"Para editar, use: `/config-canais-embeds` (pix/loja) ou `/config-canais-sistemas` (coins/xp/levelup)",
                 inline=False
             )
 
@@ -89,7 +90,7 @@ class ConfigBotView(discord.ui.View):
                       f"• **Voice Creator**: {self._format_channel(self.config_data.get('voice_creator_channel_id'))}\n"
                       f"• **Adventure Log**: {self._format_channel(self.config_data.get('adventure_log_channel_id'))}\n"
                       f"• **Guild Raid**: {self._format_channel(self.config_data.get('guild_raid_channel_id'))}\n\n"
-                      f"Para editar, use: `!config-canais-sistemas`",
+                      f"Para editar, use: `/config-canais-sistemas`",
                 inline=False
             )
 
@@ -353,16 +354,23 @@ class ConfigBotCog(commands.Cog):
                 log.error(f"Erro ao editar mensagem de erro: {edit_err}")
 
 
-    @commands.command(name="config-canais-log")
-    @commands.has_permissions(administrator=True)
+    @app_commands.command(name="config-canais-log", description="Configura os canais de log (commands/status/help/antispam/antinuke)")
+    @app_commands.describe(
+        commands_ch="Canal onde comandos com ! devem ser usados",
+        status="Canal do embed de status do bot",
+        help_ch="Canal de ajuda/dúvidas",
+        antispam="Canal de log do antispam",
+        antinuke="Canal de log do antinuke",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
     async def config_canais_log(
         self,
-        ctx: commands.Context,
+        interaction: discord.Interaction,
         commands_ch: discord.TextChannel = None,
         status: discord.TextChannel = None,
         help_ch: discord.TextChannel = None,
         antispam: discord.TextChannel = None,
-        antinuke: discord.TextChannel = None
+        antinuke: discord.TextChannel = None,
     ):
         """Edita canais de log.
 
@@ -382,15 +390,17 @@ class ConfigBotCog(commands.Cog):
             fields["antinuke_log_channel_id"] = antinuke.id
 
         if not fields:
-            await ctx.send("⚠️ Nenhum canal foi especificado.")
+            await interaction.response.send_message("⚠️ Nenhum canal foi especificado.", ephemeral=True)
             return
+
+        await interaction.response.defer(ephemeral=True)
 
         if self.bot.db:
             try:
-                await self._persist_config(ctx.guild.id, fields)
+                await self._persist_config(interaction.guild.id, fields)
             except Exception as e:
                 log.error(f"Erro ao configurar canais de log: {e}")
-                await ctx.send(f"❌ Erro: {e}")
+                await interaction.followup.send(f"❌ Erro: {e}")
                 return
         else:
             from db.local_config import set_many
@@ -413,13 +423,20 @@ class ConfigBotCog(commands.Cog):
         if antinuke:
             embed.add_field(name="☢️ Antinuke", value=antinuke.mention, inline=True)
 
-        await ctx.send(embed=embed)
+        await interaction.followup.send(embed=embed)
 
-    @commands.command(name="config-canais-embeds")
-    @commands.has_permissions(administrator=True)
+    @app_commands.command(name="config-canais-embeds", description="Configura os canais das embeds fixas (pix/ticket/cores) e logs de entrada/saída")
+    @app_commands.describe(
+        pix="Canal onde a embed de planos Pix é postada",
+        ticket="Canal onde o painel de tickets é postado",
+        cores="Canal onde a embed de cores é postada",
+        entrada="Canal de log de entrada de membros",
+        saida="Canal de log de saída de membros",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
     async def config_canais_embeds(
         self,
-        ctx: commands.Context,
+        interaction: discord.Interaction,
         pix: discord.TextChannel = None,
         ticket: discord.TextChannel = None,
         cores: discord.TextChannel = None,
@@ -444,15 +461,17 @@ class ConfigBotCog(commands.Cog):
             fields["member_leave_log_channel_id"] = saida.id
 
         if not fields:
-            await ctx.send("⚠️ Nenhum canal foi especificado.")
+            await interaction.response.send_message("⚠️ Nenhum canal foi especificado.", ephemeral=True)
             return
+
+        await interaction.response.defer(ephemeral=True)
 
         if self.bot.db:
             try:
-                await self._persist_config(ctx.guild.id, fields)
+                await self._persist_config(interaction.guild.id, fields)
             except Exception as e:
                 log.error(f"Erro ao configurar canais de embeds: {e}")
-                await ctx.send(f"❌ Erro: {e}")
+                await interaction.followup.send(f"❌ Erro: {e}")
                 return
         else:
             from db.local_config import set_many
@@ -476,7 +495,7 @@ class ConfigBotCog(commands.Cog):
         if saida:
             embed.add_field(name="🚪 Saída", value=saida.mention, inline=True)
 
-        await ctx.send(embed=embed)
+        await interaction.followup.send(embed=embed)
 
     @commands.command(name="config-economia")
     @commands.has_permissions(administrator=True)
@@ -717,11 +736,21 @@ class ConfigBotCog(commands.Cog):
         from db.config import refresh_server_config
         await refresh_server_config(self.bot.db, guild_id)
 
-    @commands.command(name="config-canais-sistemas")
-    @commands.has_permissions(administrator=True)
+    @app_commands.command(name="config-canais-sistemas", description="Configura voice creator, raids, aventuras, coins/xp log, level up e premium")
+    @app_commands.describe(
+        voz_criador="Canal de voz gatilho do criador de salas",
+        raids="Canal de notificação de raids de guilda",
+        aventuras="Canal de log de aventuras",
+        coins_log="Canal de log de coins",
+        xp_log="Canal de log de XP",
+        levelup="Canal de anúncio de level up",
+        premium_categoria="Categoria de pagamento premium (Pix)",
+        premium_log="Canal de log de premium",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
     async def config_canais_sistemas(
         self,
-        ctx: commands.Context,
+        interaction: discord.Interaction,
         voz_criador: discord.VoiceChannel = None,
         raids: discord.TextChannel = None,
         aventuras: discord.TextChannel = None,
@@ -757,15 +786,17 @@ class ConfigBotCog(commands.Cog):
             fields["premium_log_channel_id"] = premium_log.id
 
         if not fields:
-            await ctx.send("⚠️ Nenhum canal foi especificado.")
+            await interaction.response.send_message("⚠️ Nenhum canal foi especificado.", ephemeral=True)
             return
+
+        await interaction.response.defer(ephemeral=True)
 
         if self.bot.db:
             try:
-                await self._persist_config(ctx.guild.id, fields)
+                await self._persist_config(interaction.guild.id, fields)
             except Exception as e:
                 log.error(f"Erro ao configurar canais de sistemas: {e}")
-                await ctx.send(f"❌ Erro: {e}")
+                await interaction.followup.send(f"❌ Erro: {e}")
                 return
         else:
             from db.local_config import set_many
@@ -797,7 +828,7 @@ class ConfigBotCog(commands.Cog):
         if premium_log:
             embed.add_field(name="💎 Premium Log", value=premium_log.mention, inline=True)
 
-        await ctx.send(embed=embed)
+        await interaction.followup.send(embed=embed)
 
     _CARGOS_TIPO_LABELS = {
         "free_color_role_ids": "Cores gratuitas",

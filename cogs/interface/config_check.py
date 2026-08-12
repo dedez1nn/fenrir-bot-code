@@ -14,13 +14,13 @@ from discord.ext import commands
 # inventar um nome errado.
 _FEATURE_COMMANDS: dict[str, str] = {
     "tickets": "⚠️ Sem comando ! hoje — só via painel administrativo (API)",
-    "voice_creator": "!config-canais-sistemas",
-    "member_logs": "!config-canais-embeds",
+    "voice_creator": "/config-canais-sistemas",
+    "member_logs": "/config-canais-embeds",
     "colors": "!config-cargos",
     "premium": "Defina ACCESS_TOKEN no `.env` (Mercado Pago) — não é um comando !",
     "xp": "!add-cargo-nivel / !remover-cargo-nivel / !listar-cargos-nivel",
-    "adventures": "!config-canais-sistemas",
-    "guild_raids": "!config-canais-sistemas",
+    "adventures": "/config-canais-sistemas",
+    "guild_raids": "/config-canais-sistemas",
     "antispam": "!antispam_toggle / !antispam_canal_log / !antispam_threshold",
     "antinuke": "!antinuke_toggle / !antinuke_canal_log",
     "economy": "!config-economia",
@@ -30,7 +30,7 @@ _FEATURE_COMMANDS: dict[str, str] = {
     "gnews": "Defina GNEWS_API_KEY no `.env`",
     "invite_blocker": "Sem pré-requisito além da permissão Manage Messages do bot",
     "auto_remove_bots": "Sem pré-requisito além da permissão Kick Members do bot",
-    "status": "!config-canais-log",
+    "status": "/config-canais-log",
 }
 
 _ENTRIES_PER_PAGE = 6

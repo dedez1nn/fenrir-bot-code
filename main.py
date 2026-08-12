@@ -407,6 +407,17 @@ async def ping(interaction: discord.Interaction):
 
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, (app_commands.MissingPermissions, app_commands.CheckFailure)):
+        try:
+            msg = "❌ Você não tem permissão para usar este comando."
+            if interaction.response.is_done():
+                await interaction.followup.send(msg, ephemeral=True)
+            else:
+                await interaction.response.send_message(msg, ephemeral=True)
+        except Exception:
+            pass
+        return
+
     traceback.print_exception(type(error), error, error.__traceback__)
     msg = "❌ Ocorreu um erro inesperado. Tente novamente mais tarde."
     try:
