@@ -28,7 +28,10 @@ services:
     restart: unless-stopped
     depends_on:
       postgres:
-        condition: service_healthy
+        # `service_started` (não `service_healthy`): o bot já opera em modo
+        # JSON quando o Postgres está indisponível/lento — não faz sentido
+        # bloquear o start do container esperando o healthcheck do Postgres.
+        condition: service_started
     environment:
       - TOKEN=${TOKEN}
       - ACCESS_TOKEN=${ACCESS_TOKEN}
