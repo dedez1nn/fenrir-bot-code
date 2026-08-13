@@ -35,10 +35,23 @@ class SelfbotTrapCog(commands.Cog):
         self.bot = bot
 
     async def cog_load(self) -> None:
-        if self.bot.db is None:
-            logger.warning("bot.db indisponível — armadilha de selfbot não carregada.")
-            return
         global _trap_channels, _log_channels
+
+        if self.bot.db is None:
+            logger.warning("bot.db indisponível — armadilha de selfbot em modo local (data/local_config.json).")
+            from db.local_config import get as local_get
+
+            guild_id = local_get("selfbot_trap_guild_id")
+            if guild_id is None:
+                return
+            trap_channel_id = local_get("selfbot_trap_channel_id")
+            log_channel_id = local_get("selfbot_log_channel_id")
+            if trap_channel_id is not None:
+                _trap_channels[guild_id] = trap_channel_id
+            if log_channel_id is not None:
+                _log_channels[guild_id] = log_channel_id
+            return
+
         _trap_channels = await get_all_selfbot_channels(self.bot.db)
         _log_channels = await get_all_selfbot_log_channels(self.bot.db)
 
@@ -155,19 +168,30 @@ class SelfbotTrapCog(commands.Cog):
         canal: discord.TextChannel,
         canal_log: discord.TextChannel | None = None,
     ) -> None:
-        if self.bot.db is None:
-            await ctx.send("❌ Banco de dados não disponível.")
-            return
-
         guild_id = ctx.guild.id
-        await set_selfbot_channel(self.bot.db, guild_id, canal.id)
-        _trap_channels[guild_id] = canal.id
 
+        if self.bot.db is not None:
+            await set_selfbot_channel(self.bot.db, guild_id, canal.id)
+            if canal_log:
+                await set_selfbot_log_channel(self.bot.db, guild_id, canal_log.id)
+        else:
+            from db.local_config import set_many
+
+            fields = {"selfbot_trap_guild_id": guild_id, "selfbot_trap_channel_id": canal.id}
+            if canal_log:
+                fields["selfbot_log_channel_id"] = canal_log.id
+            set_many(fields)
+
+        _trap_channels[guild_id] = canal.id
         if canal_log:
-            await set_selfbot_log_channel(self.bot.db, guild_id, canal_log.id)
             _log_channels[guild_id] = canal_log.id
 
-        embed = discord.Embed(title="🚨 Armadilha de Selfbot Configurada", color=0xFF4444)
+        aviso_local = "" if self.bot.db else "\n⚠️ Sem Postgres — salvo localmente (`data/local_config.json`), só vale para esta instância."
+        embed = discord.Embed(
+            title="🚨 Armadilha de Selfbot Configurada",
+            description=aviso_local or None,
+            color=0xFF4444,
+        )
         embed.add_field(name="Canal armadilha", value=canal.mention, inline=True)
 
         if canal_log:
@@ -188,16 +212,25 @@ class SelfbotTrapCog(commands.Cog):
     @commands.command(name="selfbot-remover")
     @commands.has_permissions(administrator=True)
     async def cmd_selfbot_remover(self, ctx: commands.Context) -> None:
-        if self.bot.db is None:
-            await ctx.send("❌ Banco de dados não disponível.")
-            return
-
         guild_id = ctx.guild.id
-        await remove_selfbot_channel(self.bot.db, guild_id)
-        await remove_selfbot_log_channel(self.bot.db, guild_id)
+
+        if self.bot.db is not None:
+            await remove_selfbot_channel(self.bot.db, guild_id)
+            await remove_selfbot_log_channel(self.bot.db, guild_id)
+        else:
+            from db.local_config import set_many
+
+            set_many({
+                "selfbot_trap_guild_id": None,
+                "selfbot_trap_channel_id": None,
+                "selfbot_log_channel_id": None,
+            })
+
         _trap_channels.pop(guild_id, None)
         _log_channels.pop(guild_id, None)
-        await ctx.send("✅ Armadilha de selfbot e canal de log removidos.")
+
+        aviso_local = "" if self.bot.db else " (local)"
+        await ctx.send(f"✅ Armadilha de selfbot e canal de log removidos{aviso_local}.")
 
     @commands.command(name="selfbot-status")
     @commands.has_permissions(administrator=True)
@@ -207,6 +240,12 @@ class SelfbotTrapCog(commands.Cog):
         log_channel_id = _log_channels.get(guild_id)
 
         embed = discord.Embed(title="🚨 Status — Armadilha de Selfbot", color=0xFF4444)
+        if not self.bot.db:
+            embed.add_field(
+                name="⚠️ Modo",
+                value="Sem Postgres — usando `data/local_config.json` (só vale para esta instância)",
+                inline=False,
+            )
         if channel_id:
             ch = ctx.guild.get_channel(channel_id)
             mention = ch.mention if ch else f"<canal removido: {channel_id}>"
