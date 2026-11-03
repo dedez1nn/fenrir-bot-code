@@ -26,6 +26,8 @@ __pycache__/
 # ─── Testes e documentação (não usados em runtime) ────────────────────────────
 tests/
 docs/
+devpanel/
+imagens/
 *.md
 erros_config.md
 

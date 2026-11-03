@@ -8,6 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
 
+from services.extensions import discover_extensions, module_defines_setup
 from db import (
     apply_migrations,
     close_pool,
@@ -51,18 +52,7 @@ _FEATURE_COG_MAP: dict[str, str] = {
 }
 
 
-def _module_defines_setup(path: str) -> bool:
-    """Heurística leve: detecta se um arquivo tem `setup` exportado.
-
-    Lê o source sem importar. Suficiente para distinguir pacotes-cog (com
-    `async def setup(bot)`) de `__init__.py` vazios.
-    """
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            src = f.read()
-    except OSError:
-        return False
-    return "def setup(" in src
+_module_defines_setup = module_defines_setup  # alias de compatibilidade
 
 
 class FenrirBot(commands.Bot):
@@ -75,6 +65,8 @@ class FenrirBot(commands.Bot):
         self.global_config = None
         # Callback armazenado para poder remover o listener no shutdown
         self._cache_notify_cb = None
+        # Painel local de cogs (DEV_PANEL=1); None quando desligado
+        self._dev_panel = None
 
     async def _init_database(self) -> None:
         """Inicializa pool, aplica migrations e importa JSONs se necessário.
@@ -298,32 +290,30 @@ class FenrirBot(commands.Bot):
         await self._init_database()
 
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-        COGS_DIR = os.path.join(BASE_DIR, "cogs")
 
-        for root, dirs, files in os.walk(COGS_DIR):
-            dirs[:] = [d for d in dirs if d != "__pycache__"]
-
-            # Pacotes com setup() no __init__.py (ex.: cogs.antispam) são
-            # carregados como uma única extensão; submódulos não são entry points.
-            init_path = os.path.join(root, "__init__.py")
-            if os.path.exists(init_path) and _module_defines_setup(init_path):
-                rel = os.path.relpath(root, BASE_DIR)
-                module = rel.replace(os.sep, ".")
-                await self._safe_load_extension(module)
-                dirs[:] = []  # não recursar — submódulos já vêm pelo pacote
-                continue
-
-            for filename in files:
-                if filename.endswith(".py") and filename != "__init__.py":
-                    rel = os.path.relpath(os.path.join(root, filename), BASE_DIR)
-                    module = rel.replace(os.sep, ".")[:-3]
-                    await self._safe_load_extension(module)
+        for module in discover_extensions(BASE_DIR):
+            await self._safe_load_extension(module)
 
         await self.tree.sync()
         await self._start_cache_listener()
+        if os.getenv("DEV_PANEL", "0") == "1":
+            await self._start_dev_panel(BASE_DIR)
         log.info("Bot setup loaded")
 
+    async def _start_dev_panel(self, base_dir: str) -> None:
+        """Sobe o painel local de cogs. Falha no painel nunca derruba o bot."""
+        try:
+            from devpanel import start_dev_panel
+            self._dev_panel = await start_dev_panel(self, base_dir)
+        except Exception:
+            log.warning("Painel de desenvolvimento não iniciou:\n%s", traceback.format_exc())
+
     async def close(self) -> None:
+        if self._dev_panel is not None:
+            try:
+                await self._dev_panel.stop()
+            except Exception:
+                pass
         if self.db is not None and self._cache_notify_cb is not None:
             try:
                 await self.db.remove_listener("fenrir_cache", self._cache_notify_cb)

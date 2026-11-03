@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Painel do Fenrir</title>
+<style>
+  :root {
+    --bg: #0e1220; --surface: #161b2e; --surface-2: #1d2340; --border: #272f52;
+    --text: #e8ebf7; --muted: #8b93b5; --accent: #6c8cff; --on: #3ecf8e; --off: #4a5170;
+    --danger: #ff6b7a; --warn: #f5b84b; --shadow: 0 8px 24px rgba(0,0,0,.28);
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f3f5fb; --surface: #fff; --surface-2: #eef1fa; --border: #dde2f2; --text: #1b2036;
+            --muted: #666f93; --accent: #4a6cf0; --off: #b9bfd6; --shadow: 0 6px 20px rgba(30,40,90,.08);
+            color-scheme: light; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 28px 16px 64px; }
+
+  header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+  h1 { font-size: 24px; margin: 0; letter-spacing: -.01em; }
+  .sub { color: var(--muted); font-size: 14px; margin-top: 2px; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px;
+          background: var(--surface); border: 1px solid var(--border); font-size: 13px; color: var(--muted); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--off); }
+  .pill.online .dot { background: var(--on); box-shadow: 0 0 0 3px rgba(62,207,142,.18); }
+  .pill.offline .dot { background: var(--danger); box-shadow: 0 0 0 3px rgba(255,107,122,.18); }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); }
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 16px 18px; margin-bottom: 14px; }
+  .master { display: flex; align-items: center; gap: 14px; }
+  .master b { font-size: 16px; display: block; }
+  .master small { color: var(--muted); }
+  .grow { flex: 1 1 200px; }
+  input[type=search] { width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--border);
+          background: var(--surface-2); color: var(--text); font: inherit; outline: none; }
+  input[type=search]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(108,140,255,.2); }
+
+  .banner { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 11px 16px; margin-bottom: 14px;
+            border-radius: 12px; font-size: 14px; border: 1px solid var(--border); background: var(--surface-2); }
+  .banner.warn { border-color: rgba(245,184,75,.5); }
+  .banner.err { border-color: rgba(255,107,122,.5); color: var(--danger); }
+  .banner button { margin-left: auto; }
+  .spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--accent);
+          animation: r .8s linear infinite; flex: none; }
+  @keyframes r { to { transform: rotate(360deg); } }
+
+  button { font: inherit; cursor: pointer; border-radius: 9px; border: 1px solid var(--border); padding: 6px 12px;
+           background: var(--surface); color: var(--text); }
+  button:hover { border-color: var(--accent); }
+
+  .group { margin-top: 22px; }
+  .group-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 6px 8px; }
+  .group-head h2 { margin: 0; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .group-head .gcount { color: var(--muted); font-size: 13px; margin-left: 8px; font-weight: 400; letter-spacing: 0; text-transform: none; }
+  .list { overflow: hidden; }
+  .row { display: flex; align-items: flex-start; gap: 16px; padding: 14px 18px; border-top: 1px solid var(--border); }
+  .row:first-child { border-top: 0; }
+  .row.off .title { color: var(--muted); }
+  .info { flex: 1; min-width: 0; }
+  .title { font-weight: 600; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+  .mod { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); font-weight: 400; }
+  .desc { color: var(--muted); font-size: 13.5px; margin-top: 2px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; padding: 2px 8px; border-radius: 6px;
+          background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); }
+  .row.off .chip { opacity: .6; }
+  .err-text { color: var(--danger); font-size: 13px; margin-top: 6px; word-break: break-word; }
+  .status { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; align-self: center; white-space: nowrap; }
+  .status.on { color: var(--on); background: rgba(62,207,142,.12); }
+  .status.off { color: var(--muted); background: var(--surface-2); }
+  .status.bad { color: var(--danger); background: rgba(255,107,122,.12); }
+  .right { display: flex; align-items: center; gap: 14px; align-self: center; }
+
+  .switch { position: relative; width: 46px; height: 26px; flex: none; display: inline-block; }
+  .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; z-index: 1; }
+  .switch .track { position: absolute; inset: 0; border-radius: 999px; background: var(--off); transition: background .18s; }
+  .switch .track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%;
+          background: #fff; transition: transform .18s; box-shadow: 0 1px 3px rgba(0,0,0,.35); }
+  .switch input:checked + .track { background: var(--on); }
+  .switch input:checked + .track::after { transform: translateX(20px); }
+  .switch input:indeterminate + .track { background: var(--warn); }
+  .switch input:indeterminate + .track::after { transform: translateX(10px); }
+  .switch input:focus-visible + .track { outline: 3px solid rgba(108,140,255,.45); outline-offset: 2px; }
+  .switch input:disabled { cursor: progress; }
+  .switch.busy { opacity: .55; }
+  .switch.sm { transform: scale(.85); transform-origin: right center; }
+
+  .empty { text-align: center; color: var(--muted); padding: 40px 0; }
+  #toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 10; }
+  .toast { background: var(--surface); border: 1px solid var(--danger); color: var(--text); padding: 10px 14px; border-radius: 10px;
+           box-shadow: var(--shadow); max-width: 360px; font-size: 14px; }
+  .toast.ok { border-color: var(--on); }
+  @media (max-width: 560px) { .status { display: none; } .row { padding: 12px 14px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Painel do Fenrir</h1>
+      <div class="sub">Cogs do bot em execução nesta máquina</div>
+    </div>
+    <div class="pill" id="botpill"><span class="dot"></span><span id="bottext">conectando…</span></div>
+  </header>
+
+  <div class="card toolbar">
+    <div class="master">
+      <label class="switch" title="Ligar ou desligar todos os cogs">
+        <input type="checkbox" id="master" aria-label="Ligar ou desligar todos os cogs"><span class="track"></span>
+      </label>
+      <div><b>Todos os cogs</b><small id="count">carregando…</small></div>
+    </div>
+    <div class="grow"><input type="search" id="q" placeholder="Filtrar por nome, módulo ou comando…" aria-label="Filtrar cogs" autocomplete="off"></div>
+  </div>
+
+  <div id="syncbar"></div>
+  <main id="groups"></main>
+</div>
+<div id="toasts" aria-live="polite"></div>
+
+<script>
+const TOKEN = "__PANEL_TOKEN__";
+const state = { cogs: [], sync: {}, bot: {}, online: false, busy: new Set(), filter: "", loaded: false };
+const $ = (id) => document.getElementById(id);
+
+function el(tag, props = {}, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === "class") n.className = v;
+    else if (k === "text") n.textContent = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else if (v !== false && v != null) n.setAttribute(k, v === true ? "" : v);
+  }
+  for (const kid of kids.flat()) if (kid != null) n.append(kid);
+  return n;
+}
+
+async function api(path, method = "GET", body) {
+  const res = await fetch(path, {
+    method,
+    headers: { "X-Panel-Token": TOKEN, ...(body ? { "Content-Type": "application/json" } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  let data = {};
+  try { data = await res.json(); } catch (_) {}
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+function toast(msg, ok = false) {
+  const t = el("div", { class: "toast" + (ok ? " ok" : ""), text: msg });
+  $("toasts").append(t);
+  setTimeout(() => t.remove(), 5200);
+}
+
+function makeSwitch(checked, { onChange, busy = false, indeterminate = false, small = false, label = "" }) {
+  const input = el("input", { type: "checkbox", "aria-label": label, disabled: busy });
+  input.checked = checked;
+  input.indeterminate = indeterminate;
+  input.addEventListener("change", () => onChange(input.checked));
+  return el("label", { class: "switch" + (busy ? " busy" : "") + (small ? " sm" : "") }, input, el("span", { class: "track" }));
+}
+
+function matches(c, q) {
+  if (!q) return true;
+  const hay = [c.label, c.module, c.description, ...c.cogs, ...c.commands].join(" ").toLowerCase();
+  return q.toLowerCase().split(/\s+/).every((w) => hay.includes(w));
+}
+
+function summarize(list) {
+  const on = list.filter((c) => c.loaded).length;
+  return { on, total: list.length, all: on === list.length && list.length > 0, none: on === 0 };
+}
+
+function renderRow(c) {
+  const busy = state.busy.has(c.module);
+  const shown = c.commands.slice(0, 6);
+  const chips = shown.map((x) => el("span", { class: "chip", text: x }));
+  if (c.commands.length > shown.length) {
+    chips.push(el("span", { class: "chip", title: c.commands.join("  "), text: `+${c.commands.length - shown.length}` }));
+  }
+  const status = c.error ? ["bad", "erro"] : c.loaded ? ["on", "ativo"] : ["off", "desligado"];
+  return el("div", { class: "row" + (c.loaded ? "" : " off") },
+    el("div", { class: "info" },
+      el("div", { class: "title" }, el("span", { text: c.label }), el("span", { class: "mod", text: c.module })),
+      c.description ? el("div", { class: "desc", text: c.description }) : null,
+      chips.length ? el("div", { class: "chips" }, chips) : null,
+      c.error ? el("div", { class: "err-text", text: c.error }) : null),
+    el("div", { class: "right" },
+      el("span", { class: "status " + status[0], text: status[1] }),
+      makeSwitch(c.loaded, { busy, label: `Ligar ou desligar ${c.label}`, onChange: (v) => toggle(c.module, v) })));
+}
+
+function renderGroups() {
+  const visible = state.cogs.filter((c) => matches(c, state.filter));
+  const root = $("groups");
+  root.replaceChildren();
+  if (!state.loaded) return;
+  if (!visible.length) { root.append(el("div", { class: "empty", text: "Nenhum cog encontrado." })); return; }
+
+  const groups = new Map();
+  for (const c of visible) {
+    if (!groups.has(c.group)) groups.set(c.group, { label: c.group_label, items: [] });
+    groups.get(c.group).items.push(c);
+  }
+  const ordered = [...groups.values()].sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+  for (const g of ordered) {
+    const s = summarize(g.items);
+    const mods = g.items.map((c) => c.module);
+    const busy = mods.some((m) => state.busy.has(m));
+    root.append(el("section", { class: "group" },
+      el("div", { class: "group-head" },
+        el("h2", {}, g.label, el("span", { class: "gcount", text: `${s.on}/${s.total}` })),
+        makeSwitch(s.all, { busy, small: true, indeterminate: !s.all && !s.none, label: `Ligar ou desligar o grupo ${g.label}`,
+                            onChange: (v) => bulk(v, mods, `o grupo ${g.label}`) })),
+      el("div", { class: "card list" }, g.items.map(renderRow))));
+  }
+}
+
+function renderHeader() {
+  const s = summarize(state.cogs);
+  $("count").textContent = state.loaded ? `${s.on} de ${s.total} ativos` : "carregando…";
+  const m = $("master");
+  m.checked = s.all;
+  m.indeterminate = !s.all && !s.none;
+  m.disabled = state.busy.size > 0 || !state.loaded;
+  m.closest(".switch").classList.toggle("busy", m.disabled);
+
+  const pill = $("botpill");
+  pill.className = "pill " + (state.online ? "online" : "offline");
+  if (!state.online) $("bottext").textContent = state.loaded ? "bot offline (sem resposta)" : "conectando…";
+  else {
+    const b = state.bot, parts = [b.ready ? b.name : "bot iniciando"];
+    if (b.latency_ms != null) parts.push(`${b.latency_ms} ms`);
+    if (b.ready) parts.push(`${b.guilds} servidor${b.guilds === 1 ? "" : "es"}`);
+    $("bottext").textContent = parts.join(" · ");
+  }
+}
+
+function renderSync() {
+  const bar = $("syncbar"), sy = state.sync;
+  bar.replaceChildren();
+  if (!state.loaded) return;
+  if (sy.error) {
+    bar.append(el("div", { class: "banner err" }, el("span", { text: `Falha ao sincronizar os comandos: ${sy.error}` }),
+      el("button", { text: "Tentar de novo", onclick: syncNow })));
+  } else if (sy.pending && sy.auto) {
+    bar.append(el("div", { class: "banner warn" }, el("div", { class: "spin" }),
+      el("span", { text: "Comandos alterados. Sincronizando com o Discord em instantes…" })));
+  } else if (sy.pending) {
+    bar.append(el("div", { class: "banner warn" }, el("span", { text: "Comandos alterados. A sincronização automática está desligada." }),
+      el("button", { text: "Sincronizar agora", onclick: syncNow })));
+  }
+}
+
+function render() { renderHeader(); renderSync(); renderGroups(); }
+
+async function refresh() {
+  if (state.busy.size) return;
+  try {
+    const d = await api("/api/cogs");
+    Object.assign(state, { cogs: d.cogs, sync: d.sync, bot: d.bot, online: true, loaded: true });
+  } catch (e) {
+    state.online = false;
+  }
+  render();
+}
+
+function applyItems(items) {
+  const by = new Map(items.map((i) => [i.module, i]));
+  state.cogs = state.cogs.map((c) => by.get(c.module) || c);
+}
+
+async function toggle(module, enabled) {
+  state.busy.add(module);
+  state.cogs = state.cogs.map((c) => (c.module === module ? { ...c, loaded: enabled, error: null } : c));
+  render();
+  try {
+    const d = await api("/api/cogs/toggle", "POST", { module, enabled });
+    applyItems([d.cog]);
+    state.sync = d.sync;
+    if (d.cog.error) toast(`${d.cog.label}: ${d.cog.error}`);
+  } catch (e) {
+    toast(`Não foi possível alterar: ${e.message}`);
+    state.online = e.message.startsWith("Failed") ? false : state.online;
+  } finally {
+    state.busy.delete(module);
+    await refresh();
+  }
+}
+
+async function bulk(enabled, modules, what = "todos os cogs") {
+  const targets = state.cogs.filter((c) => modules.includes(c.module) && c.loaded !== enabled);
+  if (!targets.length) return render();
+  if (!enabled && !confirm(`Desligar ${what} (${targets.length} cog${targets.length === 1 ? "" : "s"})?\nOs comandos deles param de responder.`)) {
+    return render();
+  }
+  targets.forEach((c) => state.busy.add(c.module));
+  render();
+  try {
+    const d = await api("/api/cogs/bulk", "POST", { enabled, modules });
+    applyItems(d.cogs);
+    state.sync = d.sync;
+    if (d.errors) toast(`${d.errors} cog(s) com erro. Veja os detalhes na lista.`);
+    else toast(`${targets.length} cog(s) ${enabled ? "ligado(s)" : "desligado(s)"}.`, true);
+  } catch (e) {
+    toast(`Não foi possível alterar: ${e.message}`);
+  } finally {
+    targets.forEach((c) => state.busy.delete(c.module));
+    await refresh();
+  }
+}
+
+async function syncNow() {
+  try {
+    const d = await api("/api/sync", "POST", {});
+    toast(`Comandos sincronizados (${d.commands}).`, true);
+  } catch (e) {
+    toast(`Falha ao sincronizar: ${e.message}`);
+  }
+  await refresh();
+}
+
+$("master").addEventListener("change", (e) => bulk(e.target.checked, state.cogs.map((c) => c.module)));
+$("q").addEventListener("input", (e) => { state.filter = e.target.value.trim(); renderGroups(); });
+refresh();
+setInterval(refresh, 4000);
+</script>
+</body>
+</html>

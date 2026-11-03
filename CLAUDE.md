@@ -35,6 +35,12 @@ pytest
 
 Current verified state: `pytest -q` passes with `162 passed` and warnings. The main warnings are `datetime.utcnow()` deprecations and some `RuntimeWarning` noise around mocked `tasks.loop` usage in tests.
 
+**Dev panel (cogs on/off, local only):**
+```bash
+DEV_PANEL=1 python main.py     # abre http://localhost:8765 (porta em DEV_PANEL_PORT)
+```
+`devpanel/` lista os cogs (via `services/extensions.py`) e liga/desliga com `load_extension`/`unload_extension`; slash commands são sincronizados com atraso (`DEV_PANEL_AUTOSYNC`). Preso a 127.0.0.1, exige token por execução e checa `Host`. Não vai no deploy (`.discloudignore`).
+
 ## Environment Setup
 
 Copy `.env.example` to `.env` and fill in:
