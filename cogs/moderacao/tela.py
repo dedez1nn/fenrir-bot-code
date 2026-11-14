@@ -20,7 +20,7 @@ from typing import Optional
 import discord
 from discord.ext import commands
 
-from services.screenshare import ROLE_HOST, ROLE_VIEWER, ScreenShareServer
+from services.screenshare import ScreenShareServer
 
 log = logging.getLogger("fenrir.screenshare")
 
@@ -31,6 +31,7 @@ class ScreenShare(commands.Cog):
         self.server: Optional[ScreenShareServer] = None
         # Por sala (id do canal de voz): se membros além do dono podem compartilhar.
         self._allow_members: dict[int, bool] = {}
+        self._owners: dict[int, int] = {}  # canal de voz -> id do dono
 
     async def cog_load(self) -> None:
         port = int(os.getenv("SCREENSHARE_PORT", "8766"))
@@ -53,6 +54,8 @@ class ScreenShare(commands.Cog):
             port=port,
             max_viewers=int(os.getenv("SCREENSHARE_MAX_VIEWERS", "8")),
             ice_servers=ice,
+            get_participants=self._participants,
+            can_share=self._can_share_uid,
             on_host_change=self._on_host_change,
         )
         try:
@@ -76,15 +79,35 @@ class ScreenShare(commands.Cog):
     def allow_members(self, channel_id: int) -> bool:
         return self._allow_members.get(channel_id, False)
 
-    def set_allow_members(self, channel_id: int, value: bool) -> None:
+    async def set_allow_members(self, channel_id: int, value: bool) -> None:
         self._allow_members[channel_id] = value
+        if self.server is not None:
+            await self.server.refresh(channel_id)  # painéis abertos atualizam o botão Compartilhar
 
-    def can_share(self, member, owner, channel_id: int) -> bool:
-        return member == owner or self.allow_members(channel_id)
+    def set_owner(self, channel_id: int, user_id: int) -> None:
+        self._owners[channel_id] = user_id
 
-    def link(self, channel_id: int, user_id: int, role: str) -> str:
+    def can_share(self, user_id: int, channel_id: int) -> bool:
+        return self._owners.get(channel_id) == user_id or self.allow_members(channel_id)
+
+    def link(self, channel_id: int, user_id: int) -> str:
         assert self.server is not None
-        return self.server.link(channel_id, user_id, role)
+        return self.server.link(channel_id, user_id)
+
+    # -- callbacks do servidor web
+
+    def _can_share_uid(self, room_id: int, uid: str) -> bool:
+        return self.can_share(int(uid), room_id)
+
+    def _participants(self, room_id: int) -> list[dict]:
+        """Membros na call, com nome e foto (ids como string: passam de 2^53)."""
+        channel = self.bot.get_channel(room_id)
+        if not isinstance(channel, discord.VoiceChannel):
+            return []
+        return [
+            {"id": str(m.id), "name": m.display_name, "avatar": m.display_avatar.with_size(64).url}
+            for m in channel.members if not m.bot
+        ]
 
     # -- eventos
 
@@ -94,7 +117,7 @@ class ScreenShare(commands.Cog):
             return
         if live:
             text = (f"🖥️ <@{user_id}> começou a compartilhar a tela. "
-                    f"Use **👁️ Assistir** no painel para ver.")
+                    f"Abra o **Painel de telas** para assistir.")
         else:
             text = f"⏹️ <@{user_id}> encerrou o compartilhamento de tela."
         try:
@@ -104,11 +127,21 @@ class ScreenShare(commands.Cog):
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
-        """Quem compartilha e sai da call tem o compartilhamento encerrado."""
-        if self.server is None or before.channel is None or before.channel == after.channel:
+        """Quem sai da call perde a transmissão; quem entra ou sai atualiza a lista dos painéis."""
+        if self.server is None or before.channel == after.channel:
             return
-        if self.server.host_user(before.channel.id) == member.id:
-            await self.server.stop_room(before.channel.id)
+        if before.channel is not None:
+            await self.server.drop_user(before.channel.id, member.id)
+            await self.server.refresh(before.channel.id)
+        if after.channel is not None:
+            await self.server.refresh(after.channel.id)
+
+    @commands.Cog.listener()
+    async def on_guild_channel_delete(self, channel):
+        self._allow_members.pop(channel.id, None)
+        self._owners.pop(channel.id, None)
+        if self.server is not None:
+            await self.server.stop_room(channel.id)
 
 
 async def setup(bot):

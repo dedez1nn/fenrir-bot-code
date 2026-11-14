@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fenrir | Painel de telas</title>
+<style>
+  :root {
+    --bg: #0e1218; --surface: #151b24; --surface-2: #1c2430; --line: #263040;
+    --fg: #e6ebf2; --muted: #8795a8; --accent: #6cc4d9; --accent-ink: #072229;
+    --live: #ff5d6c; --stage: #0a0d12;
+    --font: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #eef2f6; --surface: #ffffff; --surface-2: #f3f6f9; --line: #d6dde6; --fg: #141b24; --muted: #5a6a7e;
+            --accent: #0f7f96; --accent-ink: #ffffff; --live: #d63046; --stage: #dfe6ee; color-scheme: light; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--fg); font: 14px/1.45 var(--font); padding: 10px; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  svg { width: 16px; height: 16px; flex: none; }
+  [hidden] { display: none !important; }
+
+  .app { max-width: 1760px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px; }
+
+  /* barra fina */
+  .bar { position: relative; display: flex; align-items: center; gap: 8px; min-height: 36px; padding-left: 40px; }
+  .room { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 10px; }
+  .room h1 { font: 700 15px/1.2 var(--font); margin: 0; white-space: nowrap; }
+  .room p { margin: 0; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid transparent; background: none;
+         border-radius: 8px; padding: 0; width: 34px; height: 34px; color: var(--muted); }
+  .btn:hover { background: var(--surface-2); color: var(--fg); }
+  .btn.primary, .btn.stop { width: auto; padding: 0 14px; font-weight: 600; }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); }
+  .btn.stop { background: var(--live); color: #fff; }
+  .btn.primary:hover, .btn.stop:hover { filter: brightness(1.08); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; filter: none; }
+  .seg { display: inline-flex; border-radius: 8px; background: var(--surface); padding: 2px; }
+  .seg button { border: 0; background: none; width: 30px; height: 30px; border-radius: 6px; color: var(--muted); display: grid; place-items: center; }
+  .seg button[aria-pressed="true"] { background: var(--surface-2); color: var(--accent); }
+  .toast { position: fixed; right: 14px; top: 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px;
+           padding: 8px 12px; font-size: 13px; z-index: 30; max-width: min(360px, 90vw); }
+
+  /* seta que recolhe/expande tudo, deixando só a tela */
+  .fab { position: fixed; left: 10px; top: 10px; z-index: 20; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line);
+         background: color-mix(in srgb, var(--surface) 88%, transparent); color: var(--fg); display: grid; place-items: center; padding: 0; }
+  .fab:hover { border-color: var(--accent); }
+  .fab svg { transition: transform .2s; }
+  [data-collapsed="1"] .fab svg { transform: rotate(180deg); }
+  [data-collapsed="1"] .fab { opacity: .5; }
+  [data-collapsed="1"] .fab:hover, [data-collapsed="1"] .fab:focus-visible { opacity: 1; }
+  [data-collapsed="1"] body { padding: 6px; }
+  [data-collapsed="1"] .bar, [data-collapsed="1"] .rail { display: none; }
+  [data-collapsed="1"] .body { grid-template-columns: minmax(0, 1fr); }
+  [data-collapsed="1"] .stage { height: calc(100dvh - 12px); }
+
+  /* corpo: trilho de pessoas + palco grande */
+  .body { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 10px; align-items: start; }
+  .rail { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; align-items: center; max-height: calc(100dvh - 76px); overflow-y: auto; }
+  .pbtn { position: relative; border: 0; background: none; padding: 3px; border-radius: 50%; }
+  .pbtn .av { width: 40px; height: 40px; font-size: 13px; }
+  .pbtn[data-live="0"] { opacity: .4; cursor: default; }
+  .pbtn[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--accent); }
+  .pbtn[data-live="1"]:not([aria-pressed="true"]):hover { box-shadow: 0 0 0 2px var(--line); }
+  .pbtn .dot { position: absolute; right: 1px; bottom: 1px; width: 11px; height: 11px; border-radius: 50%; background: var(--live); border: 2px solid var(--bg); }
+  .pbtn .n { position: absolute; left: -2px; top: -2px; min-width: 16px; height: 16px; border-radius: 8px; background: var(--surface-2);
+             border: 1px solid var(--line); font-size: 10px; display: grid; place-items: center; padding: 0 3px; }
+
+  .av { --h: 200; position: relative; width: 28px; height: 28px; border-radius: 50%; display: inline-grid; place-items: center; flex: none; overflow: hidden;
+        font: 600 11px/1 var(--font); color: #fff; background: hsl(var(--h) 48% 42%); }
+  .av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+
+  .stage { background: var(--stage); border: 1px solid var(--line); border-radius: 12px; padding: 8px;
+           height: max(440px, calc(100dvh - 76px)); display: grid; gap: 8px; }
+  .tile { position: relative; min-width: 0; min-height: 0; border-radius: 8px; overflow: hidden; background: #000; display: flex; }
+  .tile video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+  .tile-top { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 8px; padding: 8px 8px 22px;
+              background: linear-gradient(#000b, #0000); color: #fff; z-index: 2; opacity: 0; transition: opacity .15s; }
+  .tile:hover .tile-top, .tile:focus-within .tile-top { opacity: 1; }
+  @media (hover: none) { .tile-top { opacity: 1; } }
+  .tile-top b { font-weight: 600; font-size: 13px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile-top .av { width: 22px; height: 22px; font-size: 9px; }
+  .tile .wait { position: absolute; inset: 0; display: grid; place-items: center; color: #9aa7b8; font-size: 13px; }
+  .x { border: 0; width: 26px; height: 26px; border-radius: 6px; background: #0008; color: #fff; display: grid; place-items: center; }
+  .x:hover { background: var(--live); }
+  .watchers { position: absolute; left: 8px; bottom: 8px; z-index: 2; display: flex; align-items: center; background: #000a;
+              border-radius: 99px; padding: 3px 9px 3px 4px; color: #fff; font-size: 12px; gap: 7px; }
+  .watchers .stack { display: flex; }
+  .watchers .av { width: 22px; height: 22px; font-size: 9px; margin-left: -6px; box-shadow: 0 0 0 2px #000; }
+  .watchers .av:first-child { margin-left: 0; }
+  .empty { grid-column: 1 / -1; margin: auto; text-align: center; color: var(--muted); max-width: 320px; padding: 24px; }
+  .empty svg { width: 36px; height: 36px; }
+  .empty p { margin: 10px 0 0; }
+
+  @media (max-width: 860px) {
+    .body { grid-template-columns: minmax(0, 1fr); }
+    .rail { flex-direction: row; overflow-x: auto; max-height: none; padding: 4px 2px; justify-content: flex-start; }
+    .stage { height: max(320px, calc(100dvh - 150px)); }
+    .room p { display: none; }
+  }
+</style>
+</head>
+<body>
+<button class="fab" id="toggle" type="button" aria-expanded="true" title="Recolher opções" aria-label="Recolher opções">
+  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg>
+</button>
+
+<div class="app">
+  <header class="bar" id="bar">
+    <div class="room"><h1>Painel de telas</h1><p id="subtitle">Conectando...</p></div>
+    <div class="seg" role="group" aria-label="Modo de exibição">
+      <button type="button" data-mode="focus" aria-pressed="false" title="Uma tela" aria-label="Uma tela">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="3" width="12" height="10" rx="1.5"/></svg></button>
+      <button type="button" data-mode="grid" aria-pressed="true" title="Lado a lado" aria-label="Lado a lado">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="3" width="5" height="10" rx="1"/><rect x="9" y="3" width="5" height="10" rx="1"/></svg></button>
+    </div>
+    <button class="btn" id="closeAll" type="button" title="Fechar todas as telas" aria-label="Fechar todas as telas">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="3" width="12" height="9" rx="1.5"/><path d="M6 6l4 3M10 6l-4 3"/></svg>
+    </button>
+    <button class="btn primary" id="share" type="button" disabled>Compartilhar</button>
+  </header>
+
+  <div class="body">
+    <ul class="rail" id="people" aria-label="Pessoas na call"></ul>
+    <section class="stage" id="stage" aria-label="Telas"></section>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const MAX_OPEN = 6;                 // limite de telas decodificando ao mesmo tempo (poupa RAM/CPU)
+  const MAX_BITRATE = 2_000_000;      // teto de envio por espectador
+  const $ = id => document.getElementById(id);
+  const root = document.documentElement;
+  const token = new URLSearchParams(location.search).get("t") || "";
+
+  const S = {
+    me: null, ice: [], people: [], canShare: false, maxViewers: 8,
+    open: [], focus: null, mode: "grid",
+    stream: null,                       // minha captura de tela (quando transmito)
+    hostPeers: new Map(),               // cid do espectador -> RTCPeerConnection (eu transmitindo)
+    viewPeers: new Map(),               // uid de quem transmite -> RTCPeerConnection (eu assistindo)
+    tiles: new Map(),                   // uid -> { el, video, wait, watchers }
+    watching: new Set(),                // uids que já pedi ao servidor
+    rail: new Map(),                    // uid -> { li, btn }
+  };
+
+  // ---------- util
+  const ini = n => (n || "?").trim().slice(0, 2).toUpperCase();
+  const hue = id => { let h = 0; for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+  function avatar(p, extra) {
+    const a = document.createElement("span");
+    a.className = "av" + (extra ? " " + extra : "");
+    a.style.setProperty("--h", hue(p.id));
+    a.textContent = ini(p.name);
+    if (p.avatar) {
+      const img = document.createElement("img");
+      img.alt = ""; img.decoding = "async"; img.loading = "lazy"; img.referrerPolicy = "no-referrer";
+      img.src = p.avatar;
+      img.onerror = () => img.remove();
+      a.append(img);
+    }
+    return a;
+  }
+  const person = id => S.people.find(p => p.id === id);
+  const nameOf = id => (person(id) || {}).name || "Alguém";
+  let toastTimer = 0;
+  function toast(msg) {
+    document.querySelectorAll(".toast").forEach(t => t.remove());
+    const t = document.createElement("div"); t.className = "toast"; t.setAttribute("role", "status"); t.textContent = msg;
+    document.body.append(t); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.remove(), 3200);
+  }
+
+  // ---------- recolher / expandir
+  function setCollapsed(on) {
+    root.dataset.collapsed = on ? "1" : "0";
+    const b = $("toggle");
+    b.setAttribute("aria-expanded", String(!on));
+    b.title = b.ariaLabel = on ? "Mostrar opções" : "Recolher opções";
+    try { localStorage.setItem("fenrir-tela-collapsed", on ? "1" : "0"); } catch (_) {}
+  }
+  try { setCollapsed(localStorage.getItem("fenrir-tela-collapsed") === "1"); } catch (_) { setCollapsed(false); }
+  $("toggle").onclick = () => setCollapsed(root.dataset.collapsed !== "1");
+
+  // ---------- conexão
+  const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/screen/ws?t=" + encodeURIComponent(token));
+  const send = o => ws.readyState === 1 && ws.send(JSON.stringify(o));
+  let queue = Promise.resolve();
+  ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch (_) { return; } queue = queue.then(() => handle(m)).catch(console.error); };
+  ws.onclose = () => { shutdown(); $("subtitle").textContent = "Desconectado. Reabra o link pelo painel da call."; $("share").disabled = true; };
+
+  async function handle(m) {
+    switch (m.type) {
+      case "welcome": S.me = m.me; S.ice = m.ice || []; break;
+      case "state": onState(m); break;
+      case "error": toast(m.message); break;
+      case "denied": stopCapture(false); toast(m.message); break;
+      case "watch-failed": S.watching.delete(m.target); dropOpen(m.target); break;
+      case "host-left": closeViewPeer(m.from); S.watching.delete(m.from); dropOpen(m.from); break;
+      case "viewer-joined": await offerTo(m.id); break;
+      case "viewer-left": closeHostPeer(m.id); break;
+      case "offer": await answerFrom(m.from, m.data); break;
+      case "answer": { const pc = S.hostPeers.get(m.from); if (pc) await pc.setRemoteDescription(m.data); break; }
+      case "candidate": {
+        const pc = m.from.includes("-") ? S.hostPeers.get(m.from) : S.viewPeers.get(m.from);
+        if (pc && pc.remoteDescription) await pc.addIceCandidate(m.data).catch(() => {});
+        break;
+      }
+    }
+  }
+
+  function onState(m) {
+    S.people = m.people; S.canShare = m.can_share; S.maxViewers = m.max_viewers;
+    // telas abertas de quem parou de transmitir ou saiu da call
+    S.open = S.open.filter(id => { const p = person(id); return p && p.live; });
+    if (S.focus && !S.open.includes(S.focus)) S.focus = S.open[S.open.length - 1] || null;
+    renderRail(); renderBar(); syncStage(); updateWatchers();
+  }
+
+  // ---------- trilho de pessoas (atualiza no lugar, sem recriar)
+  function renderRail() {
+    const ul = $("people");
+    const ids = new Set(S.people.map(p => p.id));
+    for (const [id, r] of S.rail) if (!ids.has(id)) { r.li.remove(); S.rail.delete(id); }
+    S.people.forEach((p, i) => {
+      let r = S.rail.get(p.id);
+      if (!r) {
+        const li = document.createElement("li"), btn = document.createElement("button");
+        btn.type = "button"; btn.className = "pbtn"; btn.dataset.id = p.id;
+        li.append(btn); r = { li, btn, name: p.name, avatar: p.avatar }; S.rail.set(p.id, r);
+        btn.append(avatar(p));
+      } else if (r.name !== p.name || r.avatar !== p.avatar) {
+        r.btn.firstChild.replaceWith(avatar(p)); r.name = p.name; r.avatar = p.avatar;
+      }
+      if (ul.children[i] !== r.li) ul.insertBefore(r.li, ul.children[i] || null);
+      const open = S.open.includes(p.id), n = p.viewers.length;
+      const label = `${p.name}${p.id === S.me ? " (você)" : ""}: ${p.live ? "ao vivo" + (n ? `, ${n} assistindo` : "") : "sem tela"}`;
+      r.btn.dataset.live = p.live ? "1" : "0";
+      r.btn.setAttribute("aria-pressed", String(open));
+      r.btn.title = r.btn.ariaLabel = label;
+      r.btn.querySelectorAll(".dot, .n").forEach(x => x.remove());
+      if (p.live) { const d = document.createElement("span"); d.className = "dot"; r.btn.append(d); }
+      if (p.live && n) { const c = document.createElement("span"); c.className = "n"; c.textContent = n; r.btn.append(c); }
+    });
+  }
+  $("people").addEventListener("click", e => {
+    const b = e.target.closest(".pbtn"); if (!b) return;
+    const id = b.dataset.id, p = person(id);
+    if (!p || !p.live) return;
+    if (S.mode === "focus" && S.open.includes(id) && S.focus !== id) S.focus = id;
+    else if (S.open.includes(id)) closeScreen(id);
+    else {
+      if (S.open.length >= MAX_OPEN) return toast(`Máximo de ${MAX_OPEN} telas abertas. Feche uma para abrir outra.`);
+      S.open.push(id); S.focus = id;
+    }
+    renderRail(); syncStage();
+  });
+
+  function renderBar() {
+    const live = S.people.filter(p => p.live).length;
+    $("subtitle").textContent = `${live} ao vivo · ${S.open.length} aberta${S.open.length === 1 ? "" : "s"}`;
+    const sharing = !!S.stream, sb = $("share");
+    sb.className = "btn " + (sharing ? "stop" : "primary");
+    sb.textContent = sharing ? "Parar" : "Compartilhar";
+    sb.disabled = !sharing && !S.canShare;
+    sb.title = sharing ? "Parar de compartilhar minha tela" : S.canShare ? "Compartilhar minha tela" : "O dono da sala não liberou o compartilhamento";
+    document.querySelectorAll("[data-mode]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === S.mode)));
+  }
+  document.querySelectorAll("[data-mode]").forEach(b => b.onclick = () => {
+    S.mode = b.dataset.mode; if (!S.focus) S.focus = S.open[0] || null; renderBar(); syncStage();
+  });
+  $("closeAll").onclick = () => { S.open = []; S.focus = null; renderRail(); renderBar(); syncStage(); };
+
+  // ---------- palco: só as telas visíveis têm conexão e <video> (poupa RAM)
+  function closeScreen(id) {
+    S.open = S.open.filter(x => x !== id);
+    if (S.focus === id) S.focus = S.open[S.open.length - 1] || null;
+  }
+  function dropOpen(id) { closeScreen(id); renderRail(); renderBar(); syncStage(); }
+
+  function syncStage() {
+    const stage = $("stage");
+    const visible = S.mode === "focus" ? (S.focus && S.open.includes(S.focus) ? [S.focus] : []) : S.open.slice(0, MAX_OPEN);
+    for (const id of [...S.tiles.keys()]) if (!visible.includes(id)) removeTile(id);
+    visible.forEach((id, i) => { if (!S.tiles.has(id)) addTile(id); S.tiles.get(id).el.style.order = i; });
+
+    let empty = stage.querySelector(".empty");
+    if (!visible.length) {
+      stage.style.gridTemplateColumns = stage.style.gridTemplateRows = "";
+      if (!empty) {
+        empty = document.createElement("div"); empty.className = "empty";
+        empty.innerHTML = '<svg viewBox="0 0 16 16" width="36" height="36" fill="none" stroke="currentColor" stroke-width="1"><rect x="1.5" y="2.5" width="13" height="9" rx="1.5"/><path d="M5 14h6M8 11.5V14"/></svg><p></p>';
+        stage.append(empty);
+      }
+      empty.querySelector("p").textContent = S.people.some(p => p.live) ? "Nenhuma tela aberta. Escolha alguém com ponto vermelho para assistir." : "Ninguém está transmitindo. Use Compartilhar para mostrar a sua tela.";
+    } else {
+      if (empty) empty.remove();
+      const n = visible.length, narrow = matchMedia("(max-width: 860px)").matches;
+      const cols = n <= 1 ? 1 : narrow ? Math.min(2, n) : Math.ceil(Math.sqrt(n));
+      stage.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+      stage.style.gridTemplateRows = `repeat(${Math.ceil(n / cols)}, minmax(0, 1fr))`;
+    }
+    updateWatchers();
+  }
+  matchMedia("(max-width: 860px)").addEventListener("change", syncStage);
+
+  function addTile(id) {
+    const el = document.createElement("div"); el.className = "tile";
+    const video = document.createElement("video");
+    video.autoplay = true; video.playsInline = true; video.muted = true; video.disablePictureInPicture = false;
+    const wait = document.createElement("div"); wait.className = "wait"; wait.textContent = "Conectando...";
+    const top = document.createElement("div"); top.className = "tile-top";
+    const p = person(id) || { id, name: "Alguém" };
+    const b = document.createElement("b"); b.textContent = id === S.me ? "Sua tela" : p.name;
+    const x = document.createElement("button"); x.className = "x"; x.type = "button"; x.title = x.ariaLabel = "Fechar tela";
+    x.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
+    x.onclick = () => { closeScreen(id); renderRail(); renderBar(); syncStage(); };
+    top.append(avatar(p), b, x);
+    const watchers = document.createElement("div"); watchers.className = "watchers";
+    el.append(video, wait, top, watchers);
+    $("stage").append(el);
+    video.onplaying = () => wait.remove();
+    S.tiles.set(id, { el, video, wait, watchers });
+
+    if (id === S.me) { if (S.stream) { video.srcObject = S.stream; } }
+    else if (!S.watching.has(id)) { S.watching.add(id); send({ type: "watch", target: id }); }
+  }
+  function removeTile(id) {
+    const t = S.tiles.get(id); if (!t) return;
+    t.video.srcObject = null; t.video.removeAttribute("src"); t.video.load(); t.el.remove(); S.tiles.delete(id);
+    if (id !== S.me && S.watching.delete(id)) { send({ type: "unwatch", target: id }); closeViewPeer(id); }
+  }
+  function updateWatchers() {
+    for (const [id, t] of S.tiles) {
+      const p = person(id), v = p ? p.viewers : [];
+      t.watchers.replaceChildren();
+      if (!v.length) { const s = document.createElement("span"); s.textContent = "Ninguém assistindo"; t.watchers.append(s); continue; }
+      const stack = document.createElement("span"); stack.className = "stack";
+      v.slice(0, 5).forEach(u => stack.append(avatar(person(u) || { id: u, name: "?" })));
+      const s = document.createElement("span"); s.textContent = `${v.length} assistindo`;
+      t.watchers.append(stack, s);
+    }
+  }
+
+  // ---------- quem assiste (viewer)
+  async function answerFrom(uid, offer) {
+    closeViewPeer(uid);
+    const pc = new RTCPeerConnection({ iceServers: S.ice });
+    S.viewPeers.set(uid, pc);
+    pc.ontrack = e => { const t = S.tiles.get(uid); if (t) t.video.srcObject = e.streams[0]; };
+    pc.onicecandidate = e => e.candidate && send({ type: "candidate", to: uid, data: e.candidate });
+    pc.onconnectionstatechange = () => { if (pc.connectionState === "failed") toast(`Não consegui conectar na tela de ${nameOf(uid)}.`); };
+    await pc.setRemoteDescription(offer);
+    await pc.setLocalDescription(await pc.createAnswer());
+    send({ type: "answer", to: uid, data: pc.localDescription });
+  }
+  function closeViewPeer(uid) { const pc = S.viewPeers.get(uid); if (pc) { pc.close(); S.viewPeers.delete(uid); } }
+
+  // ---------- quem transmite (host)
+  $("share").onclick = async () => {
+    if (S.stream) return stopCapture(true);
+    try {
+      S.stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: { ideal: 15, max: 20 }, width: { max: 1920 }, height: { max: 1080 } }, audio: false,
+      });
+    } catch (_) { return toast("Compartilhamento cancelado ou negado pelo navegador."); }
+    const track = S.stream.getVideoTracks()[0];
+    track.contentHint = "detail";
+    track.addEventListener("ended", () => stopCapture(true));
+    send({ type: "live" });
+    renderBar();
+  };
+  function stopCapture(notify) {
+    if (S.stream) { S.stream.getTracks().forEach(t => t.stop()); S.stream = null; }
+    S.hostPeers.forEach(pc => pc.close()); S.hostPeers.clear();
+    if (notify) send({ type: "stop" });
+    const mine = S.tiles.get(S.me); if (mine) { mine.video.srcObject = null; }
+    renderBar();
+  }
+  async function offerTo(cid) {
+    if (!S.stream) return;
+    closeHostPeer(cid);
+    const pc = new RTCPeerConnection({ iceServers: S.ice });
+    S.hostPeers.set(cid, pc);
+    S.stream.getTracks().forEach(t => pc.addTrack(t, S.stream));
+    pc.onicecandidate = e => e.candidate && send({ type: "candidate", to: cid, data: e.candidate });
+    await pc.setLocalDescription(await pc.createOffer());
+    send({ type: "offer", to: cid, data: pc.localDescription });
+    for (const s of pc.getSenders()) {
+      try { const p = s.getParameters(); if (!p.encodings || !p.encodings.length) p.encodings = [{}]; p.encodings[0].maxBitrate = MAX_BITRATE; await s.setParameters(p); } catch (_) {}
+    }
+  }
+  function closeHostPeer(cid) { const pc = S.hostPeers.get(cid); if (pc) { pc.close(); S.hostPeers.delete(cid); } }
+
+  function shutdown() {
+    stopCapture(false);
+    S.viewPeers.forEach(pc => pc.close()); S.viewPeers.clear();
+    for (const id of [...S.tiles.keys()]) removeTile(id);
+  }
+  addEventListener("pagehide", () => { try { ws.close(); } catch (_) {} shutdown(); });
+})();
+</script>
+</body>
+</html>
