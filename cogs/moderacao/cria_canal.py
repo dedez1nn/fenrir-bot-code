@@ -1,6 +1,8 @@
 import discord
 from discord.ext import commands, tasks
 
+from services.screenshare import ROLE_HOST, ROLE_VIEWER
+
 class RenameModal(discord.ui.Modal, title="✏️ Renomear Sala"):
     new_name = discord.ui.TextInput(label="Novo nome da sala", max_length=30)
 
@@ -172,6 +174,89 @@ class VoiceControlView(discord.ui.View):
             await self.voice_channel.delete()
             await interaction.response.send_message("✅ Sala excluída.", ephemeral=True)
 
+    # ── Compartilhamento de tela (cog ScreenShare) ────────────────────────────
+
+    async def _screen_cog(self, interaction: discord.Interaction):
+        cog = self.bot.get_cog("ScreenShare")
+        if cog is None or not cog.available:
+            await interaction.response.send_message(
+                "❌ O compartilhamento de tela não está disponível no momento.", ephemeral=True
+            )
+            return None
+        return cog
+
+    async def _check_in_room(self, interaction: discord.Interaction) -> bool:
+        voice = getattr(interaction.user, "voice", None)
+        if voice is None or voice.channel != self.voice_channel:
+            await interaction.response.send_message(
+                "❌ Entre nesta call para usar o compartilhamento de tela.", ephemeral=True
+            )
+            return False
+        return True
+
+    @discord.ui.button(label="🖥️ Compartilhar tela", style=discord.ButtonStyle.success)
+    async def share_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cog = await self._screen_cog(interaction)
+        if cog is None or not await self._check_in_room(interaction):
+            return
+        channel_id = self.voice_channel.id
+        if not cog.can_share(interaction.user, self.owner, channel_id):
+            return await interaction.response.send_message(
+                "❌ O dono da sala não liberou o compartilhamento para membros.", ephemeral=True
+            )
+        sharer = cog.server.host_user(channel_id)
+        if sharer is not None and sharer != interaction.user.id:
+            return await interaction.response.send_message(
+                f"⚠️ <@{sharer}> já está compartilhando a tela.", ephemeral=True
+            )
+        url = cog.link(channel_id, interaction.user.id, ROLE_HOST)
+        await interaction.response.send_message(
+            f"🖥️ [Abrir sala para compartilhar]({url})\n"
+            "O link é pessoal e expira em 6 horas. Não compartilhe com outras pessoas.",
+            ephemeral=True,
+        )
+
+    @discord.ui.button(label="👁️ Assistir", style=discord.ButtonStyle.primary)
+    async def watch_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cog = await self._screen_cog(interaction)
+        if cog is None or not await self._check_in_room(interaction):
+            return
+        url = cog.link(self.voice_channel.id, interaction.user.id, ROLE_VIEWER)
+        await interaction.response.send_message(
+            f"👁️ [Abrir transmissão]({url})\nO link é pessoal e expira em 6 horas.",
+            ephemeral=True,
+        )
+
+    @discord.ui.button(label="🔓 Membros: bloqueado", style=discord.ButtonStyle.secondary)
+    async def allow_share_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self._check_owner(interaction):
+            return
+        cog = await self._screen_cog(interaction)
+        if cog is None:
+            return
+        allowed = not cog.allow_members(self.voice_channel.id)
+        cog.set_allow_members(self.voice_channel.id, allowed)
+        button.label = "🔓 Membros: liberado" if allowed else "🔓 Membros: bloqueado"
+        button.style = discord.ButtonStyle.success if allowed else discord.ButtonStyle.secondary
+        await interaction.response.edit_message(view=self)
+
+    @discord.ui.button(label="⏹️ Parar tela", style=discord.ButtonStyle.secondary)
+    async def stop_share_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cog = await self._screen_cog(interaction)
+        if cog is None:
+            return
+        channel_id = self.voice_channel.id
+        sharer = cog.server.host_user(channel_id)
+        if sharer is None:
+            return await interaction.response.send_message(
+                "⚠️ Ninguém está compartilhando agora.", ephemeral=True
+            )
+        if interaction.user != self.owner and interaction.user.id != sharer:
+            return await interaction.response.send_message(
+                "❌ Só o dono ou quem compartilha pode parar.", ephemeral=True
+            )
+        await cog.server.stop_room(channel_id)
+        await interaction.response.send_message("⏹️ Compartilhamento encerrado.", ephemeral=True)
 
 class VoiceCreator(commands.Cog):
     def __init__(self, bot):
@@ -246,6 +331,8 @@ class VoiceCreator(commands.Cog):
                     "🔒 Privacidade\n"
                     "🔄 Transferir\n"
                     "🚫 Expulsar\n"
+                    "🖥️ Compartilhar tela / 👁️ Assistir\n"
+                    "🔓 Liberar compartilhamento para membros\n"
                     "🗑️ Excluir"
                 ),
                 color=discord.Color.blurple()

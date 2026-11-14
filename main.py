@@ -8,7 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
 
-from services.extensions import discover_extensions, module_defines_setup
+from services.extensions import discover_extensions, filter_enabled, module_defines_setup
 from db import (
     apply_migrations,
     close_pool,
@@ -291,7 +291,10 @@ class FenrirBot(commands.Bot):
 
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-        for module in discover_extensions(BASE_DIR):
+        modules = filter_enabled(discover_extensions(BASE_DIR), os.getenv("ENABLED_COGS"))
+        if os.getenv("ENABLED_COGS"):
+            log.info("ENABLED_COGS ativo, carregando só: %s", ", ".join(modules))
+        for module in modules:
             await self._safe_load_extension(module)
 
         await self.tree.sync()
