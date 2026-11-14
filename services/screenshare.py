@@ -8,17 +8,21 @@ quem assiste quem) e serve a página (``screenshare_page.html``).
 Cada sala é um canal de voz. Vários membros podem transmitir ao mesmo tempo, e
 cada espectador só conecta nas telas que abriu (poupa banda e RAM no navegador).
 
-Acesso por link assinado (HMAC) por usuário, com expiração. O link identifica
-quem é a pessoa; quem pode entrar e transmitir é decidido pelo bot, por callbacks.
+Acesso por link assinado (HMAC) por usuário. O link identifica quem é a pessoa;
+quem pode entrar e transmitir é decidido pelo bot, por callbacks. A validade vale
+para a sala inteira (``RoomMeta``): o líder renova, e o link é removido sozinho
+quando a sala esvazia, o prazo acaba ou ninguém transmite por um tempo.
 Todos os ids viajam como string (ids do Discord estouram o inteiro seguro do JS).
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
 import logging
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Awaitable, Callable, Optional
@@ -27,7 +31,9 @@ from aiohttp import WSMsgType, web
 
 log = logging.getLogger("fenrir.screenshare")
 
-TOKEN_TTL_SECONDS = 6 * 3600
+LINK_TTL_SECONDS = 6 * 3600
+IDLE_SECONDS = 10 * 60
+LOG_SIZE = 50
 ROLE_MEMBER = "member"
 
 _PAGE_PATH = Path(__file__).with_name("screenshare_page.html")
@@ -41,36 +47,32 @@ class Claims:
     room_id: int
     user_id: int
     role: str
-    exp: int
+    epoch: int
 
 
 def _sign(secret: str, body: str) -> str:
     return hmac.new(secret.encode(), body.encode(), hashlib.sha256).hexdigest()
 
 
-def make_token(secret: str, room_id: int, user_id: int, role: str = ROLE_MEMBER,
-               ttl: int = TOKEN_TTL_SECONDS, now: Optional[float] = None) -> str:
-    exp = int((now if now is not None else time.time()) + ttl)
-    body = f"{room_id}.{user_id}.{role}.{exp}"
+def make_token(secret: str, room_id: int, user_id: int, epoch: int, role: str = ROLE_MEMBER) -> str:
+    body = f"{room_id}.{user_id}.{role}.{epoch}"
     return f"{body}.{_sign(secret, body)}"
 
 
-def verify_token(secret: str, token: str, now: Optional[float] = None) -> Optional[Claims]:
+def verify_token(secret: str, token: str) -> Optional[Claims]:
+    """Valida a assinatura. Se o link ainda vale (época e prazo) é decidido pelo servidor."""
     parts = (token or "").split(".")
     if len(parts) != 5:
         return None
-    room, user, role, exp, sig = parts
+    room, user, role, epoch, sig = parts
     if not hmac.compare_digest(sig, _sign(secret, ".".join(parts[:4]))):
         return None
     if role != ROLE_MEMBER:
         return None
     try:
-        claims = Claims(int(room), int(user), role, int(exp))
+        return Claims(int(room), int(user), role, int(epoch))
     except ValueError:
         return None
-    if claims.exp < (now if now is not None else time.time()):
-        return None
-    return claims
 
 
 # ── Estado das salas ─────────────────────────────────────────────────────────
@@ -89,9 +91,19 @@ class Room:
     watches: dict[str, set[str]] = field(default_factory=dict)  # cid espectador -> uids assistidos
 
 
+@dataclass
+class RoomMeta:
+    """Validade do link de uma sala. Existe enquanto há link válido; ``epoch`` invalida os links antigos."""
+    epoch: int
+    expires_at: float
+    idle_since: Optional[float]
+    log: deque = field(default_factory=lambda: deque(maxlen=LOG_SIZE))
+
+
 Participants = Callable[[int], list[dict]]          # room_id -> [{id, name, avatar}]
 CanShare = Callable[[int, str], bool]               # room_id, uid -> pode transmitir?
-HostCallback = Callable[[int, int, bool], Awaitable[None]]  # room_id, user_id, ao vivo?
+IsLeader = Callable[[int, str], bool]               # room_id, uid -> é o líder da sala?
+FirstShare = Callable[[int, int], Awaitable[None]]  # room_id, user_id: primeira transmissão da sala
 
 
 class ScreenShareServer:
@@ -105,7 +117,12 @@ class ScreenShareServer:
         ice_servers: Optional[list[dict]] = None,
         get_participants: Optional[Participants] = None,
         can_share: Optional[CanShare] = None,
-        on_host_change: Optional[HostCallback] = None,
+        is_leader: Optional[IsLeader] = None,
+        on_first_share: Optional[FirstShare] = None,
+        link_ttl: float = LINK_TTL_SECONDS,
+        idle_seconds: float = IDLE_SECONDS,
+        sweep_interval: float = 20,
+        clock: Callable[[], float] = time.time,
     ):
         self.secret = secret
         self.public_url = public_url.rstrip("/")
@@ -115,8 +132,16 @@ class ScreenShareServer:
         self.ice_servers = ice_servers or [{"urls": "stun:stun.l.google.com:19302"}]
         self.get_participants = get_participants or (lambda room_id: [])
         self.can_share = can_share or (lambda room_id, uid: True)
-        self.on_host_change = on_host_change
+        self.is_leader = is_leader or (lambda room_id, uid: False)
+        self.on_first_share = on_first_share
+        self.link_ttl = link_ttl
+        self.idle_seconds = idle_seconds
+        self.sweep_interval = sweep_interval
+        self._clock = clock
         self.rooms: dict[int, Room] = {}
+        self.meta: dict[int, RoomMeta] = {}
+        self._sweeper: Optional[asyncio.Task] = None
+        self._known: dict[tuple[int, str], dict] = {}
         self._seq = 0
         self._runner: Optional[web.AppRunner] = None
         self._page: Optional[str] = None
@@ -134,9 +159,13 @@ class ScreenShareServer:
         self._runner = web.AppRunner(self.app)
         await self._runner.setup()
         await web.TCPSite(self._runner, self.host, self.port).start()
+        self._sweeper = asyncio.create_task(self._sweep_loop())
         log.info("Servidor de compartilhamento de tela em %s:%s", self.host, self.port)
 
     async def stop(self) -> None:
+        if self._sweeper is not None:
+            self._sweeper.cancel()
+            self._sweeper = None
         for room in list(self.rooms.values()):
             for conn in list(room.conns.values()):
                 if not conn.ws.closed:
@@ -148,7 +177,58 @@ class ScreenShareServer:
     # -- API usada pela cog
 
     def link(self, room_id: int, user_id: int) -> str:
-        return f"{self.public_url}/screen/{room_id}?t={make_token(self.secret, room_id, user_id)}"
+        """Link pessoal. Se a sala não tem link válido, abre uma nova validade."""
+        meta = self.meta.get(room_id)
+        if meta is None:
+            now = self._clock()
+            meta = self.meta[room_id] = RoomMeta(epoch=int(now * 1000), expires_at=now + self.link_ttl, idle_since=now)
+        return f"{self.public_url}/screen/{room_id}?t={make_token(self.secret, room_id, user_id, meta.epoch)}"
+
+    def link_valid(self, room_id: int, epoch: int) -> bool:
+        meta = self.meta.get(room_id)
+        return meta is not None and meta.epoch == epoch and self._clock() < meta.expires_at
+
+    async def renew(self, room_id: int) -> bool:
+        meta = self.meta.get(room_id)
+        if meta is None:
+            return False
+        meta.expires_at = self._clock() + self.link_ttl
+        return True
+
+    async def revoke(self, room_id: int, reason: str) -> None:
+        """Remove o link da sala: invalida os tokens e derruba quem está conectado."""
+        for key in [k for k in self._known if k[0] == room_id]:
+            del self._known[key]
+        self.meta.pop(room_id, None)  # antes de fechar: evita registrar "saiu da central" em massa
+        room = self.rooms.pop(room_id, None)
+        if room is None:
+            return
+        for conn in list(room.conns.values()):
+            await _safe_send(conn.ws, {"type": "revoked", "reason": reason})
+            if not conn.ws.closed:
+                await conn.ws.close()
+
+    async def sweep(self) -> None:
+        """Remove links vencidos ou sem uso. Roda sozinho a cada ``sweep_interval`` segundos."""
+        now = self._clock()
+        for room_id, meta in list(self.meta.items()):
+            room = self.rooms.get(room_id)
+            if room is not None and room.live:
+                meta.idle_since = None
+            elif meta.idle_since is None:
+                meta.idle_since = now
+            if now >= meta.expires_at:
+                await self.revoke(room_id, "o prazo do link acabou")
+            elif meta.idle_since is not None and now - meta.idle_since >= self.idle_seconds:
+                await self.revoke(room_id, f"ninguém transmitiu por {max(1, round(self.idle_seconds / 60))} minutos")
+
+    async def _sweep_loop(self) -> None:
+        while True:
+            await asyncio.sleep(self.sweep_interval)
+            try:
+                await self.sweep()
+            except Exception:  # noqa: BLE001 - a limpeza nunca pode parar
+                log.exception("Falha na limpeza de links")
 
     def live_users(self, room_id: int) -> list[str]:
         room = self.rooms.get(room_id)
@@ -159,7 +239,10 @@ class ScreenShareServer:
         return bool(users) if user_id is None else str(user_id) in users
 
     async def refresh(self, room_id: int) -> None:
-        """Reenvia o estado (ex: alguém entrou/saiu da call, dono mudou permissão)."""
+        """Reenvia o estado (alguém entrou/saiu da call, dono mudou permissão). Sala vazia remove o link."""
+        if room_id in self.meta and not self.get_participants(room_id):
+            await self.revoke(room_id, "a sala ficou vazia")
+            return
         room = self.rooms.get(room_id)
         if room is not None:
             await self._broadcast(room_id, room)
@@ -201,8 +284,9 @@ class ScreenShareServer:
 
     async def _page_handler(self, request: web.Request) -> web.Response:
         claims = verify_token(self.secret, request.query.get("t", ""))
-        if claims is None or claims.room_id != int(request.match_info["room_id"]):
-            return web.Response(status=403, text="Link inválido ou expirado. Gere outro pelo painel da call.")
+        if (claims is None or claims.room_id != int(request.match_info["room_id"])
+                or not self.link_valid(claims.room_id, claims.epoch)):
+            return web.Response(status=403, text="Link inválido, expirado ou removido. Gere outro pelo painel da call.")
         return web.Response(
             text=self._page_html(),
             content_type="text/html",
@@ -220,7 +304,7 @@ class ScreenShareServer:
 
     async def _ws(self, request: web.Request) -> web.StreamResponse:
         claims = verify_token(self.secret, request.query.get("t", ""))
-        if claims is None:
+        if claims is None or not self.link_valid(claims.room_id, claims.epoch):
             return web.Response(status=403)
         origin = request.headers.get("Origin")
         if origin and origin.split("://", 1)[-1] != request.host:
@@ -238,9 +322,20 @@ class ScreenShareServer:
         room = self.rooms.setdefault(room_id, Room())
         self._seq += 1
         conn = Conn(ws, uid, f"{uid}-{self._seq}")
+        first_tab = not any(c.uid == uid for c in room.conns.values())
         room.conns[conn.cid] = conn
         room.watches[conn.cid] = set()
-        await ws.send_json({"type": "welcome", "me": uid, "ice": self.ice_servers})
+        meta = self.meta.get(room_id)
+        if meta is None:  # link removido entre a validação e agora
+            await ws.close()
+            return ws
+        now = self._clock()
+        await ws.send_json({
+            "type": "welcome", "me": uid, "ice": self.ice_servers,
+            "history": [self._serialize(e, now) for e in meta.log],
+        })
+        if first_tab:
+            await self._event(room_id, "join", uid)
         await self._broadcast(room_id, room)
         try:
             async for msg in ws:
@@ -264,7 +359,12 @@ class ScreenShareServer:
                 await _safe_send(conn.ws, {"type": "denied", "message": "O dono da sala não liberou o compartilhamento."})
                 return
             room.live[conn.uid] = conn.cid
-            await self._notify(room_id, int(conn.uid), True)
+            meta = self.meta.get(room_id)
+            if meta is not None:
+                meta.idle_since = None
+            await self._event(room_id, "live", conn.uid)
+            if len(room.live) == 1:
+                await self._first_share(room_id, int(conn.uid))
             await self._broadcast(room_id, room)
         elif kind == "stop":
             if conn.uid in room.live:
@@ -282,10 +382,20 @@ class ScreenShareServer:
                 return
             watching.add(target)
             await _safe_send(host.ws, {"type": "viewer-joined", "id": conn.cid})
+            await self._event(room_id, "watch", conn.uid, target)
             await self._broadcast(room_id, room)
         elif kind == "unwatch":
-            await self._unwatch(room, conn, str(data.get("target", "")))
-            await self._broadcast(room_id, room)
+            target = str(data.get("target", ""))
+            if target in room.watches.get(conn.cid, ()):
+                await self._unwatch(room, conn, target)
+                await self._event(room_id, "unwatch", conn.uid, target)
+                await self._broadcast(room_id, room)
+        elif kind == "renew":
+            if self.is_leader(room_id, conn.uid) and await self.renew(room_id):
+                await self._event(room_id, "renew", conn.uid)
+                await self._broadcast(room_id, room)
+            else:
+                await _safe_send(conn.ws, {"type": "error", "message": "Só o líder da sala renova o link."})
         elif kind in _RELAY_TYPES:
             await self._relay(room, conn, kind, str(data.get("to", "")), data.get("data"))
 
@@ -320,7 +430,10 @@ class ScreenShareServer:
                 other = room.conns.get(cid)
                 if other is not None:
                     await _safe_send(other.ws, {"type": "host-left", "from": uid})
-        await self._notify(room_id, int(uid), False)
+        meta = self.meta.get(room_id)
+        if meta is not None and not room.live:
+            meta.idle_since = self._clock()
+        await self._event(room_id, "stop", uid)
 
     async def _leave(self, room_id: int, room: Room, conn: Conn) -> None:
         if room.live.get(conn.uid) == conn.cid:
@@ -329,6 +442,10 @@ class ScreenShareServer:
             await self._unwatch(room, conn, target)
         room.watches.pop(conn.cid, None)
         room.conns.pop(conn.cid, None)
+        if self.rooms.get(room_id) is not room:
+            return  # sala removida (link revogado): nada mais a avisar
+        if not any(c.uid == conn.uid for c in room.conns.values()):
+            await self._event(room_id, "leave", conn.uid)
         if room.conns:
             await self._broadcast(room_id, room)
         else:
@@ -353,19 +470,52 @@ class ScreenShareServer:
             }
             for p in self.get_participants(room_id)
         ]
+        meta, now = self.meta.get(room_id), self._clock()
+        expires_in = max(0, int(meta.expires_at - now)) if meta else 0
+        idle_in = None
+        if meta is not None and meta.idle_since is not None:
+            idle_in = max(0, int(self.idle_seconds - (now - meta.idle_since)))
         for conn in list(room.conns.values()):
             await _safe_send(conn.ws, {
                 "type": "state",
                 "people": people,
                 "can_share": bool(self.can_share(room_id, conn.uid)),
+                "leader": bool(self.is_leader(room_id, conn.uid)),
+                "expires_in": expires_in,
+                "idle_in": idle_in,
                 "max_viewers": self.max_viewers,
             })
 
-    async def _notify(self, room_id: int, user_id: int, live: bool) -> None:
-        if self.on_host_change is None:
+    def _person(self, room_id: int, uid: Optional[str]) -> Optional[dict]:
+        if uid is None:
+            return None
+        for p in self.get_participants(room_id):
+            if str(p["id"]) == uid:
+                self._known[(room_id, uid)] = {"id": uid, "name": p.get("name", ""), "avatar": p.get("avatar")}
+                break
+        # quem já saiu da call continua com nome e foto nos registros antigos
+        return self._known.get((room_id, uid)) or {"id": uid, "name": "Alguém", "avatar": None}
+
+    def _serialize(self, ev: dict, now: float) -> dict:
+        return {"kind": ev["kind"], "who": ev["who"], "target": ev["target"], "age": max(0, int(now - ev["t"]))}
+
+    async def _event(self, room_id: int, kind: str, who: str, target: Optional[str] = None) -> None:
+        """Registra na atividade da sala (últimos ``LOG_SIZE``) e avisa quem está com o painel aberto."""
+        meta, room = self.meta.get(room_id), self.rooms.get(room_id)
+        if meta is None:
+            return
+        ev = {"t": self._clock(), "kind": kind, "who": self._person(room_id, who), "target": self._person(room_id, target)}
+        meta.log.append(ev)
+        if room is not None:
+            for conn in list(room.conns.values()):
+                await _safe_send(conn.ws, {"type": "event", "event": self._serialize(ev, ev["t"])})
+
+    async def _first_share(self, room_id: int, user_id: int) -> None:
+        """Só a primeira transmissão da sala chega ao bot (uma única mensagem no canal)."""
+        if self.on_first_share is None:
             return
         try:
-            await self.on_host_change(room_id, user_id, live)
+            await self.on_first_share(room_id, user_id)
         except Exception:  # noqa: BLE001 - callback nunca pode derrubar a sinalização
             log.exception("Falha no callback de compartilhamento")
 

@@ -16,44 +16,54 @@ PEOPLE = [{"id": str(i), "name": f"user{i}", "avatar": None} for i in (1, 2, 3)]
 
 
 def test_token_valido_e_adulterado():
-    t = make_token(SECRET, 10, 20, now=1000)
-    c = verify_token(SECRET, t, now=1001)
-    assert (c.room_id, c.user_id) == (10, 20)
-    assert verify_token("outro", t, now=1001) is None
-    assert verify_token(SECRET, t.replace(".member.", ".admin."), now=1001) is None
-    assert verify_token(SECRET, "lixo", now=1001) is None
+    t = make_token(SECRET, 10, 20, 777)
+    c = verify_token(SECRET, t)
+    assert (c.room_id, c.user_id, c.epoch) == (10, 20, 777)
+    assert verify_token("outro", t) is None
+    assert verify_token(SECRET, t.replace(".member.", ".admin.")) is None
+    assert verify_token(SECRET, t.replace(".777.", ".778.")) is None
+    assert verify_token(SECRET, "lixo") is None
 
 
-def test_token_expirado():
-    assert verify_token(SECRET, make_token(SECRET, 1, 2, ttl=10, now=1000), now=1011) is None
+class Relogio:
+    def __init__(self):
+        self.t = 1_000_000.0
+
+    def __call__(self):
+        return self.t
 
 
 @pytest.fixture
 async def client():
-    events, allowed = [], {"1"}
+    events, allowed, state = [], {"1"}, {"people": list(PEOPLE)}
+    relogio = Relogio()
 
-    async def cb(room, user, live):
-        events.append((room, user, live))
+    async def first(room, user):
+        events.append((room, user))
 
     server = ScreenShareServer(
         SECRET, "http://x", max_viewers=1,
-        get_participants=lambda room: PEOPLE if room == ROOM else [],
+        get_participants=lambda room: state["people"] if room == ROOM else [],
         can_share=lambda room, uid: uid in allowed,
-        on_host_change=cb,
+        is_leader=lambda room, uid: uid == "1",
+        on_first_share=first,
+        link_ttl=6 * 3600, idle_seconds=600, clock=relogio,
     )
     c = TestClient(TestServer(server.app))
     await c.start_server()
-    c.srv, c.events, c.allowed = server, events, allowed
+    c.srv, c.events, c.allowed, c.state, c.clock = server, events, allowed, state, relogio
     yield c
     await c.close()
 
 
-def _url(uid, room=ROOM):
-    return f"/screen/ws?t={make_token(SECRET, room, uid)}"
+def _url(client, uid, room=ROOM):
+    srv = client.srv
+    srv.link(room, uid)  # garante a validade da sala
+    return f"/screen/ws?t={make_token(SECRET, room, uid, srv.meta[room].epoch)}"
 
 
 async def _connect(client, uid):
-    ws = await client.ws_connect(_url(uid))
+    ws = await client.ws_connect(_url(client, uid))
     assert (await ws.receive_json())["type"] == "welcome"
     return ws
 
@@ -70,16 +80,18 @@ async def _until(ws, kind, timeout=3):
         pytest.fail(f"mensagem {kind!r} não chegou")
 
 
-async def test_pagina_exige_token(client):
+async def test_pagina_exige_link_valido(client):
     assert (await client.get(f"/screen/{ROOM}")).status == 403
-    t = make_token(SECRET, ROOM, 1)
-    resp = await client.get(f"/screen/{ROOM}?t={t}")
+    url = client.srv.link(ROOM, 1)
+    resp = await client.get(url.replace("http://x", ""))
     assert resp.status == 200 and "Painel de telas" in await resp.text()
-    assert (await client.get(f"/screen/6?t={t}")).status == 403
+    outro = make_token(SECRET, ROOM, 1, 1)  # época antiga
+    assert (await client.get(f"/screen/{ROOM}?t={outro}")).status == 403
+    assert (await client.get(f"/screen/6?t={make_token(SECRET, 6, 1, client.srv.meta[ROOM].epoch)}")).status == 403
 
 
 async def test_fora_da_call_nao_entra(client):
-    ws = await client.ws_connect(_url(99))
+    ws = await client.ws_connect(_url(client, 99))
     assert (await ws.receive_json())["type"] == "error"
     assert (await client.get("/screen/ws?t=ruim")).status == 403
 
@@ -93,7 +105,7 @@ async def test_estado_e_permissao_de_compartilhar(client):
     assert (await _until(membro, "state"))["can_share"] is False
     await membro.send_json({"type": "live"})
     assert (await _until(membro, "denied"))["type"] == "denied"
-    assert client.events == []
+    assert client.events == []  # negado: nada chega ao canal
     for w in (dono, membro):
         await w.close()
 
@@ -128,8 +140,6 @@ async def test_fluxo_de_sinalizacao_varios_hosts_e_viewers(client):
     # parar a transmissão avisa os espectadores e o callback
     await host1.send_json({"type": "stop"})
     assert (await _until(viewer, "host-left"))["from"] == "1"
-    await asyncio.sleep(0.05)
-    assert (ROOM, 1, False) in client.events
     for w in (host1, host2, viewer):
         await w.close()
 
@@ -239,3 +249,129 @@ def test_filter_enabled():
     assert filter_enabled(mods, None) == mods
     assert filter_enabled(mods, "tela, selfbot_trap") == mods[:2]
     assert filter_enabled(mods, "cogs.economia.loja") == [mods[2]]
+
+
+# ── Validade do link, renovação e remoção automática ─────────────────────────
+
+async def test_so_lider_renova_e_prazo_estende(client):
+    lider, membro = await _connect(client, 1), await _connect(client, 2)
+    st = await _until(lider, "state")
+    assert st["leader"] is True and st["expires_in"] == 6 * 3600
+    client.clock.t += 5 * 3600
+    await membro.send_json({"type": "renew"})
+    assert "líder" in (await _until(membro, "error"))["message"]
+    await lider.send_json({"type": "renew"})
+    st = await _until(lider, "state")
+    assert st["expires_in"] == 6 * 3600
+    for w in (lider, membro):
+        await w.close()
+
+
+async def test_prazo_acaba_e_link_morre(client):
+    ws = await _connect(client, 1)
+    epoch = client.srv.meta[ROOM].epoch
+    client.clock.t += 6 * 3600 + 1
+    await client.srv.sweep()
+    assert (await _until(ws, "revoked"))["reason"].startswith("o prazo")
+    assert not client.srv.link_valid(ROOM, epoch) and ROOM not in client.srv.meta
+    assert (await client.get(f"/screen/{ROOM}?t={make_token(SECRET, ROOM, 1, epoch)}")).status == 403
+
+
+async def test_sem_transmissao_remove_o_link(client):
+    ws = await _connect(client, 1)
+    await client.srv.sweep()
+    assert ROOM in client.srv.meta                       # ainda dentro dos 10 min
+    client.clock.t += 601
+    await client.srv.sweep()
+    assert "ninguém transmitiu" in (await _until(ws, "revoked"))["reason"]
+    assert ROOM not in client.srv.meta
+
+
+async def test_transmitir_zera_o_tempo_sem_uso(client):
+    ws = await _connect(client, 1)
+    client.clock.t += 500
+    await ws.send_json({"type": "live"})
+    st = await _until(ws, "state")
+    while not st["people"][0]["live"]:
+        st = await _until(ws, "state")
+    assert st["idle_in"] is None
+    client.clock.t += 5000
+    client.srv.meta[ROOM].expires_at = client.clock.t + 1000   # só o prazo de uso interessa aqui
+    await client.srv.sweep()
+    assert ROOM in client.srv.meta
+    await ws.send_json({"type": "stop"})
+    st = await _until(ws, "state")
+    while st["idle_in"] is None:
+        st = await _until(ws, "state")
+    assert st["idle_in"] == 600
+    await ws.close()
+
+
+async def test_sala_vazia_remove_o_link_na_hora(client):
+    ws = await _connect(client, 1)
+    client.state["people"] = []
+    await client.srv.refresh(ROOM)
+    assert (await _until(ws, "revoked"))["reason"] == "a sala ficou vazia"
+    assert ROOM not in client.srv.meta
+
+
+async def test_atividade_em_tempo_real_e_historico(client):
+    client.allowed.add("2")
+    host, viewer = await _connect(client, 2), await _connect(client, 3)
+    await host.send_json({"type": "live"})
+    ev = await _until(viewer, "event")
+    assert ev["event"]["kind"] == "live" or (await _until(viewer, "event"))["event"]["kind"] == "live"
+    await viewer.send_json({"type": "watch", "target": "2"})
+    while True:
+        e = (await _until(viewer, "event"))["event"]
+        if e["kind"] == "watch":
+            break
+    assert e["who"]["name"] == "user3" and e["target"]["name"] == "user2"
+    await viewer.send_json({"type": "unwatch", "target": "2"})
+    assert (await _until(viewer, "event"))["event"]["kind"] == "unwatch"
+
+    # quem chega depois recebe o histórico, com nomes
+    novo = await client.ws_connect(_url(client, 1))
+    welcome = await novo.receive_json()
+    kinds = [e["kind"] for e in welcome["history"]]
+    assert {"join", "live", "watch", "unwatch"} <= set(kinds)
+
+    await host.close()
+    await viewer.close()
+    await novo.close()
+
+
+async def test_saida_da_central_registra_leave_com_nome(client):
+    a, b = await _connect(client, 1), await _connect(client, 2)
+    await b.close()
+    while True:
+        e = (await _until(a, "event"))["event"]
+        if e["kind"] == "leave":
+            break
+    assert e["who"]["name"] == "user2"
+    await a.close()
+
+
+async def test_so_a_primeira_transmissao_vai_ao_canal(client):
+    client.allowed.add("2")
+    h1, h2 = await _connect(client, 1), await _connect(client, 2)
+    await h1.send_json({"type": "live"})
+    await h2.send_json({"type": "live"})
+    await _until(h2, "state")
+    await asyncio.sleep(0.05)
+    assert client.events == [(ROOM, 1)]
+    for w in (h1, h2):
+        await w.close()
+
+
+async def test_cog_envia_uma_unica_mensagem_curta_ao_canal():
+    bot = Mock()
+    canal = Mock()
+    canal.send = AsyncMock()
+    bot.get_channel.return_value = canal
+    cog = ScreenShare(bot)
+    cog.set_owner(5, 1)
+    await cog._on_first_share(5, 1)
+    canal.send.assert_awaited_once()
+    assert "começou a compartilhar" in canal.send.call_args.args[0]
+    assert cog._is_leader_uid(5, "1") and not cog._is_leader_uid(5, "2")

@@ -8,13 +8,13 @@
   :root {
     --bg: #0e1218; --surface: #151b24; --surface-2: #1c2430; --line: #263040;
     --fg: #e6ebf2; --muted: #8795a8; --accent: #6cc4d9; --accent-ink: #072229;
-    --live: #ff5d6c; --stage: #0a0d12;
+    --live: #ff5d6c; --warn: #f2b65a; --stage: #0a0d12;
     --font: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
     color-scheme: dark;
   }
   @media (prefers-color-scheme: light) {
     :root { --bg: #eef2f6; --surface: #ffffff; --surface-2: #f3f6f9; --line: #d6dde6; --fg: #141b24; --muted: #5a6a7e;
-            --accent: #0f7f96; --accent-ink: #ffffff; --live: #d63046; --stage: #dfe6ee; color-scheme: light; }
+            --accent: #0f7f96; --accent-ink: #ffffff; --live: #d63046; --warn: #a86a00; --stage: #dfe6ee; color-scheme: light; }
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
@@ -27,7 +27,7 @@
   .app { max-width: 1760px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px; }
 
   /* barra fina */
-  .bar { position: relative; display: flex; align-items: center; gap: 8px; min-height: 36px; padding-left: 40px; }
+  .bar { position: relative; display: flex; align-items: center; gap: 8px; min-height: 36px; padding-left: 78px; }
   .room { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 10px; }
   .room h1 { font: 700 15px/1.2 var(--font); margin: 0; white-space: nowrap; }
   .room p { margin: 0; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -46,17 +46,43 @@
            padding: 8px 12px; font-size: 13px; z-index: 30; max-width: min(360px, 90vw); }
 
   /* seta que recolhe/expande tudo, deixando só a tela */
-  .fab { position: fixed; left: 10px; top: 10px; z-index: 20; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line);
+  .fab { position: fixed; top: 10px; z-index: 20; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line);
          background: color-mix(in srgb, var(--surface) 88%, transparent); color: var(--fg); display: grid; place-items: center; padding: 0; }
   .fab:hover { border-color: var(--accent); }
+  #toggle { left: 10px; }
+  #bell { left: 48px; }
+  .badge { position: absolute; right: -4px; top: -4px; min-width: 16px; height: 16px; border-radius: 8px; background: var(--live); color: #fff;
+           font-size: 10px; font-weight: 600; display: grid; place-items: center; padding: 0 4px; }
   .fab svg { transition: transform .2s; }
   [data-collapsed="1"] .fab svg { transform: rotate(180deg); }
   [data-collapsed="1"] .fab { opacity: .5; }
-  [data-collapsed="1"] .fab:hover, [data-collapsed="1"] .fab:focus-visible { opacity: 1; }
+  [data-collapsed="1"] .fab:hover, [data-collapsed="1"] .fab:focus-visible, [data-collapsed="1"] .fab[aria-expanded="true"] { opacity: 1; }
   [data-collapsed="1"] body { padding: 6px; }
   [data-collapsed="1"] .bar, [data-collapsed="1"] .rail { display: none; }
   [data-collapsed="1"] .body { grid-template-columns: minmax(0, 1fr); }
   [data-collapsed="1"] .stage { height: calc(100dvh - 12px); }
+
+  /* validade do link */
+  .chip { display: inline-flex; align-items: center; gap: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+          padding: 2px 4px 2px 10px; font-size: 12px; color: var(--muted); white-space: nowrap; min-height: 30px; }
+  .chip[data-warn="1"] { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); }
+  .chip:not(:has(button:not([hidden]))) { padding-right: 10px; }
+  .chip .btn { width: auto; padding: 0 10px; height: 24px; font-size: 12.5px; color: var(--fg); background: var(--surface-2); }
+  .chip .btn:hover { background: var(--line); }
+
+  /* janela suspensa de atividade (estilo notificação) */
+  .pop { position: fixed; z-index: 25; top: 48px; left: 10px; width: min(360px, calc(100vw - 20px)); background: var(--surface);
+         border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px #0007; overflow: hidden; }
+  .pop-h { display: flex; align-items: center; justify-content: space-between; padding: 10px 10px 10px 14px; border-bottom: 1px solid var(--line); }
+  .pop-h b { font-weight: 700; font-size: 14px; }
+  .pop-h .btn { width: auto; padding: 0 10px; height: 28px; font-size: 12.5px; }
+  .log { list-style: none; margin: 0; padding: 4px; max-height: min(380px, 55dvh); overflow-y: auto; }
+  .log li { display: flex; gap: 10px; align-items: flex-start; padding: 8px; border-radius: 8px; }
+  .log li:hover { background: var(--surface-2); }
+  .log li .av { width: 24px; height: 24px; font-size: 9px; margin-top: 1px; }
+  .log li p { margin: 0; flex: 1; min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
+  .log li time { color: var(--muted); font-size: 11px; white-space: nowrap; margin-top: 2px; }
+  .log .none { color: var(--muted); justify-content: center; }
 
   /* corpo: trilho de pessoas + palco grande */
   .body { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 10px; align-items: start; }
@@ -95,6 +121,7 @@
   .empty { grid-column: 1 / -1; margin: auto; text-align: center; color: var(--muted); max-width: 320px; padding: 24px; }
   .empty svg { width: 36px; height: 36px; }
   .empty p { margin: 10px 0 0; }
+  .empty svg.big { width: 36px; height: 36px; }
 
   @media (max-width: 860px) {
     .body { grid-template-columns: minmax(0, 1fr); }
@@ -109,9 +136,22 @@
   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg>
 </button>
 
+<button class="fab" id="bell" type="button" aria-expanded="false" aria-controls="pop" title="Atividade da central" aria-label="Atividade da central">
+  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11V7a4 4 0 0 1 8 0v4l1 1.5H3L4 11ZM6.5 14a1.6 1.6 0 0 0 3 0"/></svg>
+  <span class="badge" id="badge" hidden>0</span>
+</button>
+<div class="pop" id="pop" role="dialog" aria-label="Atividade da central de compartilhamento" hidden>
+  <div class="pop-h"><b>Atividade da central</b><button class="btn" id="clearLog" type="button">Limpar</button></div>
+  <ul class="log" id="log"></ul>
+</div>
+
 <div class="app">
   <header class="bar" id="bar">
     <div class="room"><h1>Painel de telas</h1><p id="subtitle">Conectando...</p></div>
+    <div class="chip" id="chip" hidden>
+      <span id="chipText"></span>
+      <button class="btn" id="renew" type="button" hidden>Renovar</button>
+    </div>
     <div class="seg" role="group" aria-label="Modo de exibição">
       <button type="button" data-mode="focus" aria-pressed="false" title="Uma tela" aria-label="Uma tela">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="3" width="12" height="10" rx="1.5"/></svg></button>
@@ -148,7 +188,10 @@
     tiles: new Map(),                   // uid -> { el, video, wait, watchers }
     watching: new Set(),                // uids que já pedi ao servidor
     rail: new Map(),                    // uid -> { li, btn }
+    leader: false, expiresAt: 0, idleAt: null, removed: null,
+    log: [], unread: 0, pop: false,
   };
+  const MAX_LOG = 50;
 
   // ---------- util
   const ini = n => (n || "?").trim().slice(0, 2).toUpperCase();
@@ -192,11 +235,16 @@
   const send = o => ws.readyState === 1 && ws.send(JSON.stringify(o));
   let queue = Promise.resolve();
   ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch (_) { return; } queue = queue.then(() => handle(m)).catch(console.error); };
-  ws.onclose = () => { shutdown(); $("subtitle").textContent = "Desconectado. Reabra o link pelo painel da call."; $("share").disabled = true; };
+  ws.onclose = () => {
+    shutdown(); $("share").disabled = true;
+    if (!S.removed) $("subtitle").textContent = "Desconectado. Reabra o link pelo painel da call.";
+  };
 
   async function handle(m) {
     switch (m.type) {
-      case "welcome": S.me = m.me; S.ice = m.ice || []; break;
+      case "welcome": S.me = m.me; S.ice = m.ice || []; (m.history || []).forEach(e => pushLog(e, true)); S.unread = 0; break;
+      case "event": pushLog(m.event, false); break;
+      case "revoked": onRevoked(m.reason); break;
       case "state": onState(m); break;
       case "error": toast(m.message); break;
       case "denied": stopCapture(false); toast(m.message); break;
@@ -216,10 +264,96 @@
 
   function onState(m) {
     S.people = m.people; S.canShare = m.can_share; S.maxViewers = m.max_viewers;
+    S.leader = m.leader; S.expiresAt = Date.now() + m.expires_in * 1000;
+    S.idleAt = m.idle_in == null ? null : Date.now() + m.idle_in * 1000;
     // telas abertas de quem parou de transmitir ou saiu da call
     S.open = S.open.filter(id => { const p = person(id); return p && p.live; });
     if (S.focus && !S.open.includes(S.focus)) S.focus = S.open[S.open.length - 1] || null;
-    renderRail(); renderBar(); syncStage(); updateWatchers();
+    renderRail(); renderBar(); syncStage(); updateWatchers(); paintChip();
+  }
+
+  // ---------- atividade (janela suspensa)
+  const EVENT_TEXT = {
+    join: () => "entrou na central", leave: () => "saiu da central",
+    live: () => "começou a compartilhar a tela", stop: () => "parou de compartilhar",
+    watch: e => `começou a ver a tela de ${e.target ? e.target.name : "alguém"}`,
+    unwatch: e => `parou de ver a tela de ${e.target ? e.target.name : "alguém"}`,
+    renew: () => "renovou a validade do link",
+  };
+  function pushLog(e, history) {
+    const f = EVENT_TEXT[e.kind]; if (!f) return;
+    const who = e.who || { id: "?", name: "Alguém" };
+    S.log.push({ who, text: `${who.name} ${f(e)}`, t: Date.now() - e.age * 1000 });
+    S.log.sort((a, b) => b.t - a.t);
+    if (S.log.length > MAX_LOG) S.log.length = MAX_LOG;
+    if (!history && who.id !== S.me && !S.pop) S.unread++;
+    paintLog(); paintBadge();
+  }
+  function ago(t) {
+    const s = Math.max(0, Math.floor((Date.now() - t) / 1000));
+    if (s < 45) return "agora";
+    const m = Math.round(s / 60);
+    return m < 60 ? `há ${m} min` : `há ${Math.floor(m / 60)} h`;
+  }
+  function paintBadge() {
+    const b = $("badge"); b.hidden = !S.unread || S.pop; b.textContent = S.unread > 9 ? "9+" : String(S.unread);
+  }
+  function paintLog() {
+    if (!S.pop) return;
+    const ul = $("log"); ul.replaceChildren();
+    if (!S.log.length) { const li = document.createElement("li"); li.className = "none"; li.textContent = "Nada por aqui ainda."; ul.append(li); return; }
+    for (const e of S.log) {
+      const li = document.createElement("li"), p = document.createElement("p"), t = document.createElement("time");
+      p.textContent = e.text; t.textContent = ago(e.t);
+      li.append(avatar(e.who), p, t); ul.append(li);
+    }
+  }
+  function setPop(open) {
+    S.pop = open; $("pop").hidden = !open; $("bell").setAttribute("aria-expanded", String(open));
+    if (open) S.unread = 0;
+    paintBadge(); paintLog();
+  }
+  $("bell").onclick = e => { e.stopPropagation(); setPop(!S.pop); };
+  $("pop").addEventListener("click", e => e.stopPropagation());
+  document.addEventListener("click", () => S.pop && setPop(false));
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && S.pop) { setPop(false); $("bell").focus(); } });
+  $("clearLog").onclick = () => { S.log = []; paintLog(); };
+
+  // ---------- validade do link
+  const two = n => String(n).padStart(2, "0");
+  function paintChip() {
+    const chip = $("chip"), text = $("chipText"), renew = $("renew");
+    if (S.removed) { chip.hidden = false; chip.dataset.warn = "1"; text.textContent = "Link removido"; renew.hidden = true; return; }
+    if (!S.expiresAt) { chip.hidden = true; return; }
+    chip.hidden = false;
+    const left = Math.max(0, S.expiresAt - Date.now());
+    if (S.idleAt != null) {
+      const i = Math.max(0, S.idleAt - Date.now());
+      chip.dataset.warn = "1"; text.textContent = `Sem transmissão · link sai em ${Math.floor(i / 60000)}:${two(Math.floor(i % 60000 / 1000))}`;
+    } else {
+      const h = Math.floor(left / 3600000), m = Math.floor(left % 3600000 / 60000);
+      chip.dataset.warn = left < 3600000 ? "1" : "0";
+      text.textContent = `Link vale por ${h ? `${h} h ${two(m)} min` : `${m} min`}`;
+    }
+    renew.hidden = !S.leader;
+    chip.title = S.leader ? "Você é o líder da sala e pode renovar" : "Só o líder da sala renova o link";
+  }
+  $("renew").onclick = () => send({ type: "renew" });
+  setInterval(() => { paintChip(); if (S.pop) paintLog(); }, 1000);
+
+  function onRevoked(reason) {
+    S.removed = reason;
+    shutdown();
+    S.open = []; S.focus = null;
+    $("subtitle").textContent = "Link removido";
+    ["share", "closeAll"].forEach(id => { $(id).disabled = true; });
+    const stage = $("stage"); stage.replaceChildren();
+    stage.style.gridTemplateColumns = stage.style.gridTemplateRows = "";
+    const box = document.createElement("div"); box.className = "empty";
+    box.innerHTML = '<svg class="big" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg><p></p>';
+    box.querySelector("p").textContent = `O link foi removido: ${reason}. Gere outro pelo painel da call no Discord.`;
+    stage.append(box);
+    paintChip();
   }
 
   // ---------- trilho de pessoas (atualiza no lugar, sem recriar)
@@ -267,7 +401,7 @@
     const sharing = !!S.stream, sb = $("share");
     sb.className = "btn " + (sharing ? "stop" : "primary");
     sb.textContent = sharing ? "Parar" : "Compartilhar";
-    sb.disabled = !sharing && !S.canShare;
+    sb.disabled = !!S.removed || (!sharing && !S.canShare);
     sb.title = sharing ? "Parar de compartilhar minha tela" : S.canShare ? "Compartilhar minha tela" : "O dono da sala não liberou o compartilhamento";
     document.querySelectorAll("[data-mode]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === S.mode)));
   }

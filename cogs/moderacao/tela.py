@@ -9,6 +9,8 @@ Variáveis de ambiente:
   Padrão: ``http://localhost:<porta>`` (só funciona na própria máquina).
 - ``SCREENSHARE_HOST`` / ``SCREENSHARE_PORT``: bind (padrão 0.0.0.0:8766).
 - ``SCREENSHARE_SECRET``: segredo dos links (padrão: ``JWT_SECRET``, senão aleatório por execução).
+- ``SCREENSHARE_LINK_HOURS``: validade do link da sala, renovável pelo líder (padrão 6).
+- ``SCREENSHARE_IDLE_MINUTES``: sem ninguém transmitindo por esse tempo, o link é removido (padrão 10).
 - ``SCREENSHARE_MAX_VIEWERS``: máximo de espectadores simultâneos (padrão 8).
 - ``SCREENSHARE_TURN_URL`` / ``_USER`` / ``_PASS``: servidor TURN opcional para redes restritivas.
 """
@@ -56,7 +58,10 @@ class ScreenShare(commands.Cog):
             ice_servers=ice,
             get_participants=self._participants,
             can_share=self._can_share_uid,
-            on_host_change=self._on_host_change,
+            is_leader=self._is_leader_uid,
+            on_first_share=self._on_first_share,
+            link_ttl=float(os.getenv("SCREENSHARE_LINK_HOURS", "6")) * 3600,
+            idle_seconds=float(os.getenv("SCREENSHARE_IDLE_MINUTES", "10")) * 60,
         )
         try:
             await server.start()
@@ -99,6 +104,9 @@ class ScreenShare(commands.Cog):
     def _can_share_uid(self, room_id: int, uid: str) -> bool:
         return self.can_share(int(uid), room_id)
 
+    def _is_leader_uid(self, room_id: int, uid: str) -> bool:
+        return self._owners.get(room_id) == int(uid)
+
     def _participants(self, room_id: int) -> list[dict]:
         """Membros na call, com nome e foto (ids como string: passam de 2^53)."""
         channel = self.bot.get_channel(room_id)
@@ -111,17 +119,20 @@ class ScreenShare(commands.Cog):
 
     # -- eventos
 
-    async def _on_host_change(self, room_id: int, user_id: int, live: bool) -> None:
+    async def _on_first_share(self, room_id: int, user_id: int) -> None:
+        """Única mensagem no canal: quando a sala passa a ter alguém compartilhando.
+
+        O resto (quem assiste quem, quem entrou ou saiu, renovações) fica na janela
+        de atividade do próprio painel.
+        """
         channel = self.bot.get_channel(room_id)
         if channel is None:
             return
-        if live:
-            text = (f"🖥️ <@{user_id}> começou a compartilhar a tela. "
-                    f"Abra o **Painel de telas** para assistir.")
-        else:
-            text = f"⏹️ <@{user_id}> encerrou o compartilhamento de tela."
         try:
-            await channel.send(text, allowed_mentions=discord.AllowedMentions.none())
+            await channel.send(
+                f"🖥️ <@{user_id}> começou a compartilhar a tela. Abra o **Painel de telas** para assistir.",
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
         except (discord.Forbidden, discord.HTTPException):
             pass
 
@@ -141,7 +152,7 @@ class ScreenShare(commands.Cog):
         self._allow_members.pop(channel.id, None)
         self._owners.pop(channel.id, None)
         if self.server is not None:
-            await self.server.stop_room(channel.id)
+            await self.server.revoke(channel.id, "a sala foi excluída")
 
 
 async def setup(bot):

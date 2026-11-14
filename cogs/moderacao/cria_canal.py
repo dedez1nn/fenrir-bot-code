@@ -205,7 +205,7 @@ class VoiceControlView(discord.ui.View):
         await interaction.response.send_message(
             f"🖥️ [Abrir painel de telas]({url})\n"
             f"Assista às telas da call e compartilhe a sua. {quem}\n"
-            "O link é pessoal e expira em 6 horas. Não compartilhe com outras pessoas.",
+            "O link é pessoal e vale por 6 horas (o líder renova no painel). Ele é removido se a sala esvaziar ou ficar sem transmissão. Não compartilhe com outras pessoas.",
             ephemeral=True,
         )
 
